@@ -2,11 +2,15 @@ import React from 'react';
 import { Alert, Modal, ScrollView, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import ThemedText from '../components/ThemedText';
 import ThemedCard from '../components/ThemedCard';
 import Button from '../components/Button';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
 import { DocumentRecord } from '../types/documents';
+import { useAuth } from '../contexts/AuthContext';
+import { uploadDocument } from '../services/storage';
 
 type DocumentArchiveScreenProps = {
   onBack: () => void;
@@ -15,13 +19,83 @@ type DocumentArchiveScreenProps = {
 };
 
 const DocumentArchiveScreen: React.FC<DocumentArchiveScreenProps> = ({ onBack, documents, initialDocumentId }) => {
+  const { user } = useAuth();
   const [activeDocument, setActiveDocument] = React.useState<DocumentRecord | null>(null);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [loadedDocuments, setLoadedDocuments] = React.useState<DocumentRecord[]>(documents);
 
   const handleOpenDocument = (doc: DocumentRecord) => {
     setActiveDocument(doc);
   };
 
   const handleCloseModal = () => setActiveDocument(null);
+
+  const handleUploadDocument = async () => {
+    if (!user?.id) {
+      setError({
+        title: 'Upload Failed',
+        message: 'User not authenticated. Please sign in again.',
+      });
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+      });
+
+      if (result.canceled) {
+        setIsUploading(false);
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.uri) {
+        setError({
+          title: 'Upload Failed',
+          message: 'Unable to read selected file.',
+        });
+        setIsUploading(false);
+        return;
+      }
+
+      const uploadResult = await uploadDocument(user.id, {
+        uri: asset.uri,
+        name: asset.name || 'document',
+        type: asset.mimeType || 'application/octet-stream',
+      });
+
+      if (!uploadResult.success) {
+        setError({
+          title: 'Upload Failed',
+          message: uploadResult.error || 'Failed to upload document.',
+        });
+        setIsUploading(false);
+        return;
+      }
+
+      // Add new document to list
+      const newDocument: DocumentRecord = {
+        id: uploadResult.data?.id || `doc-${Date.now()}`,
+        title: asset.name || 'Document',
+        subtitle: 'Uploaded document',
+        date: new Date().toLocaleDateString(),
+        summary: 'Document uploaded successfully',
+      };
+
+      setLoadedDocuments((prev) => [newDocument, ...prev]);
+      Alert.alert('Success', 'Document uploaded successfully.');
+    } catch (err: any) {
+      setError({
+        title: 'Upload Error',
+        message: err.message || 'Failed to upload document.',
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleShareDocument = async () => {
     if (!activeDocument) return;
@@ -57,6 +131,16 @@ const DocumentArchiveScreen: React.FC<DocumentArchiveScreenProps> = ({ onBack, d
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
+        {error && (
+          <ErrorAlert
+            title={error.title}
+            message={error.message}
+            onDismiss={() => setError(null)}
+            onRetry={() => setError(null)}
+            visible={!!error}
+          />
+        )}
+
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.topBarButton} onPress={onBack} activeOpacity={0.85}>
             <Ionicons name="arrow-back" size={20} color={theme.colors.primary.main} />
@@ -64,11 +148,13 @@ const DocumentArchiveScreen: React.FC<DocumentArchiveScreenProps> = ({ onBack, d
           <ThemedText variant="headline2" color="primary">
             Documents & results
           </ThemedText>
-          <View style={{ width: 44 }} />
+          <TouchableOpacity style={styles.topBarButton} onPress={handleUploadDocument} activeOpacity={0.85} disabled={isUploading}>
+            <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.primary.main} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {documents.map((doc) => (
+          {loadedDocuments.map((doc) => (
             <ThemedCard key={doc.id} style={styles.documentCard}>
               <View style={styles.documentIcon}>
                 <Ionicons name="document-text-outline" size={20} color={theme.colors.primary.main} />
@@ -94,12 +180,18 @@ const DocumentArchiveScreen: React.FC<DocumentArchiveScreenProps> = ({ onBack, d
             </ThemedCard>
           ))}
 
-          {documents.length === 0 && (
+          {loadedDocuments.length === 0 && (
             <ThemedCard style={styles.emptyCard}>
               <Ionicons name="folder-open-outline" size={20} color={theme.colors.primary.main} />
               <ThemedText variant="body2" color="primary">
                 No archived documents yet.
               </ThemedText>
+              <Button
+                label="Upload Document"
+                onPress={handleUploadDocument}
+                loading={isUploading}
+                style={{ marginTop: theme.spacing.md }}
+              />
             </ThemedCard>
           )}
         </ScrollView>
