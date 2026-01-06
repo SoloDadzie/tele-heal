@@ -15,11 +15,13 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ThemedText from '../components/ThemedText';
 import TextField from '../components/TextField';
+import ErrorAlert from '../components/ErrorAlert';
 import PhoneNumberField, { PhoneCountryOption, PHONE_COUNTRY_OPTIONS } from '../components/PhoneNumberField';
 import Button from '../components/Button';
 import ThemedCard from '../components/ThemedCard';
 import SectionHeader from '../components/SectionHeader';
 import { theme } from '../theme';
+import { profileSetupSchema, validateForm } from '../utils/validation';
 
 export type PatientProfile = {
   fullName: string;
@@ -158,6 +160,9 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     front: { status: 'idle' },
     back: { status: 'idle' },
   });
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const canContinue = React.useMemo(() => {
     if (step.key === 'demographics') {
@@ -256,7 +261,10 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     return () => clearTimeout(timer);
   }, [values, onDraftChange]);
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    setError(null);
+    setFieldErrors({});
+
     if (!canContinue) return;
 
     if (stepIndex < STEPS.length - 1) {
@@ -264,10 +272,33 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       return;
     }
 
-    onDone({
-      ...values,
-      completedAt: new Date().toISOString(),
-    });
+    try {
+      setIsSubmitting(true);
+      const validation = validateForm(profileSetupSchema, values);
+
+      if (!validation.valid) {
+        setFieldErrors(validation.errors);
+        setError({
+          title: 'Validation Error',
+          message: 'Please check your input and try again.',
+        });
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      onDone({
+        ...values,
+        completedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      setError({
+        title: 'Profile Setup Error',
+        message: 'Failed to save profile. Please try again.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleBack = () => {
@@ -386,6 +417,16 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           </View>
           <View style={{ width: 40 }} />
         </View>
+
+        {error && (
+          <ErrorAlert
+            title={error.title}
+            message={error.message}
+            onDismiss={() => setError(null)}
+            onRetry={handleNext}
+            visible={!!error}
+          />
+        )}
 
         <ScrollView
           style={styles.content}
@@ -705,7 +746,8 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             variant="primary"
             fullWidth
             onPress={handleNext}
-            disabled={!canContinue}
+            disabled={!canContinue || isSubmitting}
+            loading={isSubmitting}
           />
         </View>
       </View>
