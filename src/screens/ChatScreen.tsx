@@ -16,8 +16,12 @@ import ThemedText from '../components/ThemedText';
 import TabBar from '../components/TabBar';
 import ThemedCard from '../components/ThemedCard';
 import SectionHeader from '../components/SectionHeader';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '../contexts/AuthContext';
+import { sendMessage, getMessages, getConversations, markConversationAsRead } from '../services/messaging';
+import { subscribeToMessages } from '../services/realtime';
 
 export type ChatThread = {
   id: string;
@@ -96,24 +100,127 @@ const initialMessages: ChatMessage[] = [
 ];
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ onGoHome, onOpenSchedule, onOpenProfile }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = React.useState('chat');
   const [mode, setMode] = React.useState<'list' | 'conversation'>('list');
   const [selectedThread, setSelectedThread] = React.useState<ChatThread | null>(null);
+  const [threads, setThreads] = React.useState<ChatThread[]>(mockThreads);
   const [messages, setMessages] = React.useState<ChatMessage[]>(initialMessages);
   const [inputValue, setInputValue] = React.useState('');
   const [activeFilter, setActiveFilter] = React.useState<'All' | 'Unread' | 'Pinned'>('All');
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+
+  // Load conversations from Supabase
+  React.useEffect(() => {
+    const loadConversations = async () => {
+      if (!user?.id) return;
+
+      try {
+        setIsLoading(true);
+        const result = await getConversations(user.id);
+
+        if (result.success && result.data) {
+          const formattedThreads: ChatThread[] = result.data.map((conv: any) => ({
+            id: conv.id,
+            name: conv.other_user_name || 'Unknown',
+            lastMessage: conv.last_message || 'No messages yet',
+            timeLabel: new Date(conv.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            unreadCount: conv.unread_count || 0,
+            online: conv.is_online || false,
+            specialty: conv.other_user_specialty || undefined,
+          }));
+
+          setThreads(formattedThreads);
+        }
+      } catch (err: any) {
+        setError({
+          title: 'Load Failed',
+          message: err.message || 'Failed to load conversations.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadConversations();
+  }, [user?.id]);
+
+  // Load messages when thread is selected
+  React.useEffect(() => {
+    const loadMessages = async () => {
+      if (!user?.id || !selectedThread) return;
+
+      try {
+        const result = await getMessages(user.id, selectedThread.id);
+
+        if (result.success && result.data) {
+          const formattedMessages: ChatMessage[] = result.data.map((msg: any) => ({
+            id: msg.id,
+            from: msg.sender_id === user.id ? 'self' : 'doctor',
+            text: msg.content || undefined,
+            imageUri: msg.image_url || undefined,
+          }));
+
+          setMessages(formattedMessages);
+
+          // Mark conversation as read
+          await markConversationAsRead(user.id, selectedThread.id);
+
+          // Update thread to remove unread count
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === selectedThread.id ? { ...t, unreadCount: 0 } : t
+            )
+          );
+        }
+      } catch (err: any) {
+        setError({
+          title: 'Load Failed',
+          message: err.message || 'Failed to load messages.',
+        });
+      }
+    };
+
+    loadMessages();
+
+    // Subscribe to new messages
+    if (user?.id && selectedThread) {
+      const subscription = subscribeToMessages(user.id, (newMessage) => {
+        if (newMessage.conversation_id === selectedThread.id) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: newMessage.id,
+              from: newMessage.sender_id === user.id ? 'self' : 'doctor',
+              text: newMessage.content || undefined,
+              imageUri: newMessage.image_url || undefined,
+            },
+          ]);
+        }
+      });
+
+      return () => {
+        if (subscription) {
+          // Unsubscribe logic would go here
+        }
+      };
+    }
+  }, [user?.id, selectedThread]);
+
   const filteredThreads = React.useMemo(() => {
     if (activeFilter === 'Unread') {
-      return mockThreads.filter((thread) => (thread.unreadCount ?? 0) > 0);
+      return threads.filter((thread) => (thread.unreadCount ?? 0) > 0);
     }
     if (activeFilter === 'Pinned') {
-      return mockThreads.filter((thread) => thread.pinned);
+      return threads.filter((thread) => thread.pinned);
     }
-    return mockThreads;
-  }, [activeFilter]);
+    return threads;
+  }, [activeFilter, threads]);
+
   const pinnedThreads = React.useMemo(
-    () => mockThreads.filter((thread) => thread.pinned),
-    [],
+    () => threads.filter((thread) => thread.pinned),
+    [threads],
   );
 
   const tabItems = React.useMemo(
