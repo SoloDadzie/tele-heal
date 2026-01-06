@@ -5,9 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import Button from '../components/Button';
 import ThemedText from '../components/ThemedText';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
 import type { PaymentIntent } from '../types/payments';
 import { PAYSTACK_PUBLIC_KEY, toPaystackMinorUnit } from '../config/payments';
+import { useAuth } from '../contexts/AuthContext';
+import { initializePayment, verifyPayment } from '../services/payments';
 
 type PaymentScreenProps = {
   intent: PaymentIntent;
@@ -55,6 +58,81 @@ const PAYMENT_STEPS: PaymentStep[] = [
 ];
 
 const PaymentScreen: React.FC<PaymentScreenProps> = ({ intent, onClose, onSuccess, onError }) => {
+  const { user } = useAuth();
+  const [stage, setStage] = React.useState<PaymentStage>('initializing');
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [paymentReference, setPaymentReference] = React.useState<string | null>(null);
+
+  // Initialize payment on mount
+  React.useEffect(() => {
+    const initPayment = async () => {
+      if (!user?.id) return;
+
+      try {
+        const result = await initializePayment({
+          appointmentId: intent.appointmentId,
+          amount: intent.amountValue,
+          email: intent.patientEmail || user.email || FALLBACK_EMAIL,
+          fullName: intent.patientName || user.full_name || 'Patient',
+        });
+
+        if (!result.success) {
+          setError({
+            title: 'Payment Initialization Failed',
+            message: result.error || 'Failed to initialize payment.',
+          });
+          setStage('error');
+          onError?.(result.error);
+          return;
+        }
+
+        setPaymentReference(result.data?.reference || null);
+        setStage('awaitingPrompt');
+      } catch (err: any) {
+        setError({
+          title: 'Error',
+          message: err.message || 'Failed to initialize payment.',
+        });
+        setStage('error');
+        onError?.(err.message);
+      }
+    };
+
+    initPayment();
+  }, [user?.id, intent.appointmentId, intent.amountValue, intent.patientEmail, intent.patientName, onError]);
+
+  // Handle payment verification
+  const handlePaymentVerification = async (reference: string) => {
+    try {
+      setStage('processing');
+
+      const result = await verifyPayment({
+        reference,
+        appointmentId: intent.appointmentId,
+      });
+
+      if (!result.success) {
+        setError({
+          title: 'Payment Verification Failed',
+          message: result.error || 'Failed to verify payment.',
+        });
+        setStage('error');
+        onError?.(result.error);
+        return;
+      }
+
+      setStage('completed');
+      onSuccess(reference);
+    } catch (err: any) {
+      setError({
+        title: 'Error',
+        message: err.message || 'Failed to verify payment.',
+      });
+      setStage('error');
+      onError?.(err.message);
+    }
+  };
+
   const formattedAmount = React.useMemo(() => {
     try {
       return new Intl.NumberFormat('en-GH', {
