@@ -250,7 +250,10 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   }, [step.key]);
 
   React.useEffect(() => {
-    onDraftChange?.(values);
+    const timer = setTimeout(() => {
+      onDraftChange?.(values);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [values, onDraftChange]);
 
   const handleNext = () => {
