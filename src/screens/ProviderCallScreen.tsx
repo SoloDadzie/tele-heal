@@ -1,12 +1,15 @@
 import React from 'react';
-import { Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ThemedCard from '../components/ThemedCard';
 import ThemedText from '../components/ThemedText';
 import Button from '../components/Button';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
+import { startRecording, stopRecording } from '../services/video';
 
 export type ProviderCallMessage = {
   id: string;
@@ -49,12 +52,16 @@ const ProviderCallScreen: React.FC<ProviderCallScreenProps> = ({
   onSendChatMessage,
   onAddSharedNote,
 }) => {
+  const { user } = useAuth();
   const [isMuted, setIsMuted] = React.useState(false);
   const [isVideoOff, setIsVideoOff] = React.useState(false);
   const [isSharing, setIsSharing] = React.useState(false);
   const [isChatOpen, setIsChatOpen] = React.useState(true);
   const [chatDraft, setChatDraft] = React.useState('');
   const [sharedNoteDraft, setSharedNoteDraft] = React.useState('');
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
 
   const handleToggleMic = () => {
     setIsMuted((prev) => {
@@ -102,8 +109,66 @@ const ProviderCallScreen: React.FC<ProviderCallScreenProps> = ({
     setSharedNoteDraft('');
   };
 
+  // Handle video recording
+  const handleToggleRecording = async () => {
+    if (!user?.id) {
+      setError({
+        title: 'Recording Failed',
+        message: 'User not authenticated. Please sign in again.',
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      if (isRecording) {
+        // Stop recording
+        const stopResult = await stopRecording();
+        if (!stopResult.success) {
+          setError({
+            title: 'Stop Recording Failed',
+            message: stopResult.error || 'Failed to stop recording.',
+          });
+          return;
+        }
+        setIsRecording(false);
+        Alert.alert('Success', 'Recording stopped and saved.');
+      } else {
+        // Start recording
+        const startResult = await startRecording();
+        if (!startResult.success) {
+          setError({
+            title: 'Start Recording Failed',
+            message: startResult.error || 'Failed to start recording.',
+          });
+          return;
+        }
+        setIsRecording(true);
+        Alert.alert('Success', 'Recording started.');
+      }
+    } catch (err: any) {
+      setError({
+        title: 'Recording Error',
+        message: err.message || 'Failed to manage recording.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
+      {error && (
+        <ErrorAlert
+          title={error.title}
+          message={error.message}
+          onDismiss={() => setError(null)}
+          onRetry={() => setError(null)}
+          visible={!!error}
+        />
+      )}
+
       <View style={styles.root}>
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.topBarButton} onPress={onBack ?? onOpenWorkspace} activeOpacity={0.85}>
