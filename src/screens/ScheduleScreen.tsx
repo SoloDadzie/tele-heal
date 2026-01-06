@@ -17,9 +17,13 @@ import TabBar from '../components/TabBar';
 import ThemedCard from '../components/ThemedCard';
 import SectionHeader from '../components/SectionHeader';
 import Button from '../components/Button';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
 import { formatCurrency } from '../utils/currency';
 import scheduleIllustration from '../../assets/illustrations/schedule-calendar.png';
+import { useAuth } from '../contexts/AuthContext';
+import { getAppointments, updateAppointmentStatus } from '../services/appointments';
+import { subscribeToAppointments } from '../services/realtime';
 
 export type AppointmentStatus = 'pendingPayment' | 'paid';
 
@@ -139,7 +143,11 @@ const ScheduleScreen: React.FC<ScheduleScreenProps> = ({
   onOpenPreConsultation,
   onPayAppointment,
 }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = React.useState('schedule');
+  const [loadedAppointments, setLoadedAppointments] = React.useState<Appointment[]>(appointments);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
 
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(
     null,
@@ -147,12 +155,82 @@ const ScheduleScreen: React.FC<ScheduleScreenProps> = ({
   const [isDetailsModalVisible, setIsDetailsModalVisible] = React.useState(false);
   const [isRescheduleModalVisible, setIsRescheduleModalVisible] = React.useState(false);
 
+  // Load appointments from Supabase
+  React.useEffect(() => {
+    const loadAppointments = async () => {
+      if (!user?.id) return;
+
+      try {
+        setIsLoading(true);
+        const result = await getAppointments(user.id, 'patient');
+
+        if (result.success && result.data) {
+          const formattedAppointments: Appointment[] = result.data.map((apt: any) => ({
+            id: apt.id,
+            code: apt.appointment_code || '',
+            serviceLabel: apt.service_type || 'General Consultation',
+            total: apt.total_amount ? `GHS ${apt.total_amount}` : 'GHS 0.00',
+            amountValue: apt.total_amount || 0,
+            currency: 'GHS',
+            status: apt.payment_status === 'paid' ? 'paid' : 'pendingPayment',
+            doctorName: apt.provider_name || 'Doctor',
+            dateLabel: new Date(apt.appointment_date).toLocaleDateString(),
+            timeLabel: apt.appointment_time || '00:00',
+            group: new Date(apt.appointment_date) < new Date() ? 'today' : 'upcoming',
+            visitType: (apt.consultation_type || 'virtual') as AppointmentVisitType,
+            locationLabel: apt.location || 'Virtual',
+          }));
+
+          setLoadedAppointments(formattedAppointments);
+        } else {
+          setError({
+            title: 'Load Failed',
+            message: result.error || 'Failed to load appointments.',
+          });
+        }
+      } catch (err: any) {
+        setError({
+          title: 'Load Failed',
+          message: err.message || 'Failed to load appointments.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAppointments();
+
+    // Subscribe to real-time updates
+    if (user?.id) {
+      const subscription = subscribeToAppointments(user.id, 'patient', (updatedAppointment) => {
+        setLoadedAppointments((prev) => {
+          const index = prev.findIndex((apt) => apt.id === updatedAppointment.id);
+          if (index >= 0) {
+            const updated = [...prev];
+            updated[index] = {
+              ...updated[index],
+              status: updatedAppointment.payment_status === 'paid' ? 'paid' : 'pendingPayment',
+            };
+            return updated;
+          }
+          return prev;
+        });
+      });
+
+      return () => {
+        if (subscription) {
+          // Unsubscribe logic would go here
+        }
+      };
+    }
+  }, [user?.id]);
+
   const groupedAppointments = React.useMemo(
     () => ({
-      today: appointments.filter((appt) => appt.group === 'today'),
-      upcoming: appointments.filter((appt) => appt.group === 'upcoming'),
+      today: loadedAppointments.filter((appt) => appt.group === 'today'),
+      upcoming: loadedAppointments.filter((appt) => appt.group === 'upcoming'),
     }),
-    [appointments],
+    [loadedAppointments],
   );
 
   const hasTodayAppointments = groupedAppointments.today.length > 0;
