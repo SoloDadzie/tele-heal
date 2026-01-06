@@ -22,6 +22,9 @@ import ThemedCard from '../components/ThemedCard';
 import SectionHeader from '../components/SectionHeader';
 import { theme } from '../theme';
 import { profileSetupSchema, validateForm } from '../utils/validation';
+import { useAuth } from '../contexts/AuthContext';
+import { upsertPatientProfile, upsertConsent, addMedicalHistory, addAllergy, addMedication, upsertInsuranceInfo } from '../services/profile';
+import { uploadInsuranceCard } from '../services/storage';
 
 export type PatientProfile = {
   fullName: string;
@@ -94,6 +97,7 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   initialDraft,
   onDraftChange,
 }) => {
+  const { user } = useAuth();
   const [stepIndex, setStepIndex] = React.useState(0);
   const progressScrollRef = React.useRef<ScrollView | null>(null);
   const chipLayouts = React.useRef<Record<StepKey, { x: number; width: number }>>({
@@ -285,16 +289,64 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (!user?.id) {
+        setError({
+          title: 'Profile Setup Error',
+          message: 'User not authenticated. Please sign in again.',
+        });
+        return;
+      }
+
+      // Save patient profile
+      const profileResult = await upsertPatientProfile(user.id, {
+        dateOfBirth: values.dateOfBirth,
+        gender: values.gender,
+        address: values.address,
+      });
+
+      if (!profileResult.success) {
+        setError({
+          title: 'Profile Setup Error',
+          message: profileResult.error || 'Failed to save profile.',
+        });
+        return;
+      }
+
+      // Save medical history if provided
+      if (values.medicalHistory.trim()) {
+        await addMedicalHistory(user.id, values.medicalHistory);
+      }
+
+      // Save allergies if provided
+      if (values.allergies.trim()) {
+        await addAllergy(user.id, values.allergies, 'moderate');
+      }
+
+      // Save medications if provided
+      if (values.medications.trim()) {
+        await addMedication(user.id, values.medications, '', '');
+      }
+
+      // Save insurance info if provided
+      if (values.insuranceProvider.trim() || values.insuranceMemberId.trim()) {
+        await upsertInsuranceInfo(user.id, {
+          providerName: values.insuranceProvider,
+          memberId: values.insuranceMemberId,
+        });
+      }
+
+      // Save consents
+      await upsertConsent(user.id, 'telemedicine', values.consentTelemedicine);
+      await upsertConsent(user.id, 'privacy', values.consentPrivacy);
 
       onDone({
         ...values,
         completedAt: new Date().toISOString(),
       });
-    } catch (err) {
+    } catch (err: any) {
       setError({
         title: 'Profile Setup Error',
-        message: 'Failed to save profile. Please try again.',
+        message: err.message || 'Failed to save profile. Please try again.',
       });
     } finally {
       setIsSubmitting(false);
