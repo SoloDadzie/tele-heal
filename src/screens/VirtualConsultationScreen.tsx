@@ -53,15 +53,18 @@ const VirtualConsultationScreen: React.FC<VirtualConsultationScreenProps> = ({
   const [noteDraft, setNoteDraft] = React.useState('');
 
   React.useEffect(() => {
-    onWorkspaceStateChange?.({
-      appointmentId: appointment.id,
-      notes,
-      messages: MOCK_MESSAGES,
-      isMuted,
-      isVideoOff,
-      isSharingScreen,
-      lastUpdated: new Date().toISOString(),
-    });
+    const timer = setTimeout(() => {
+      onWorkspaceStateChange?.({
+        appointmentId: appointment.id,
+        notes,
+        messages: MOCK_MESSAGES,
+        isMuted,
+        isVideoOff,
+        isSharingScreen,
+        lastUpdated: new Date().toISOString(),
+      });
+    }, 500);
+    return () => clearTimeout(timer);
   }, [notes, isMuted, isVideoOff, isSharingScreen, appointment.id, onWorkspaceStateChange]);
 
   return (
