@@ -14,7 +14,9 @@ import ThemedText from '../components/ThemedText';
 import Button from '../components/Button';
 import PhoneNumberField from '../components/PhoneNumberField';
 import ThemedCard from '../components/ThemedCard';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
 
 export interface ForgotPasswordScreenProps {
   onBack?: () => void;
@@ -25,7 +27,10 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   onBack,
   onCodeSent,
 }) => {
+  const { resetPassword } = useAuth();
   const [phone, setPhone] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
   const anim = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -39,10 +44,36 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
 
   const canSendCode = phone.trim().length > 0;
 
-  const handleSendCode = () => {
-    // TODO: hook up forgot password backend
-    if (onCodeSent) {
-      onCodeSent();
+  const handleSendCode = async () => {
+    setError(null);
+    
+    if (!phone.trim()) {
+      setError({
+        title: 'Invalid Phone',
+        message: 'Please enter a valid phone number.',
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const result = await resetPassword(phone);
+
+      if (result.success) {
+        onCodeSent?.();
+      } else {
+        setError({
+          title: 'Reset Failed',
+          message: result.error || 'Failed to send reset code. Please try again.',
+        });
+      }
+    } catch (err: any) {
+      setError({
+        title: 'Reset Failed',
+        message: err.message || 'An error occurred. Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 

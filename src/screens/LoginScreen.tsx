@@ -11,6 +11,7 @@ import ErrorAlert from '../components/ErrorAlert';
 import PhoneNumberField, { type PhoneCountryOption } from '../components/PhoneNumberField';
 import { theme } from '../theme';
 import { loginSchema, validateForm } from '../utils/validation';
+import { useAuth } from '../contexts/AuthContext';
 
 const socialProviders: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'google', label: 'Google', icon: 'logo-google' },
@@ -35,6 +36,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
   onPhoneChange,
   onCountryCodeChange,
 }) => {
+  const { signIn } = useAuth();
   const [phone, setPhone] = React.useState(initialPhone);
   const [password, setPassword] = React.useState('');
   const [rememberMe, setRememberMe] = React.useState(false);
@@ -82,12 +84,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
 
     try {
       setIsLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      onLogin?.();
-    } catch (err) {
+      const result = await signIn(phone, password);
+
+      if (result.success) {
+        onLogin?.();
+      } else {
+        setError({
+          title: 'Login Failed',
+          message: result.error || 'Invalid phone number or password. Please try again.',
+        });
+      }
+    } catch (err: any) {
       setError({
         title: 'Login Failed',
-        message: 'Invalid phone number or password. Please try again.',
+        message: err.message || 'An error occurred during login. Please try again.',
       });
     } finally {
       setIsLoading(false);

@@ -11,6 +11,7 @@ import ErrorAlert from '../components/ErrorAlert';
 import PhoneNumberField from '../components/PhoneNumberField';
 import { theme } from '../theme';
 import { signUpSchema, validateForm } from '../utils/validation';
+import { useAuth } from '../contexts/AuthContext';
 
 const heroSteps: { id: string; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { id: 'verify', icon: 'shield-checkmark-outline', label: 'Secure identity' },
@@ -33,6 +34,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
   onVerified,
   onLogin,
 }) => {
+  const { signUp } = useAuth();
   const [fullName, setFullName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
@@ -64,12 +66,20 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
 
     try {
       setIsLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      onVerified?.();
-    } catch (err) {
+      const result = await signUp(email, phone, password, fullName);
+
+      if (result.success) {
+        onVerified?.();
+      } else {
+        setError({
+          title: 'Sign Up Failed',
+          message: result.error || 'Failed to create account. Please try again.',
+        });
+      }
+    } catch (err: any) {
       setError({
         title: 'Sign Up Failed',
-        message: 'Failed to create account. Please try again.',
+        message: err.message || 'An error occurred during sign up. Please try again.',
       });
     } finally {
       setIsLoading(false);
