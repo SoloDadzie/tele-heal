@@ -491,8 +491,8 @@ export default function App() {
         .toString()
         .padStart(6, '0')}`,
       serviceLabel: selectedDoctor ? `${selectedDoctor.name} consultation` : `${selectedHospital.name} visit`,
-      total: formatCurrency(650),
-      amountValue: 650,
+      total: 'GHS 3,900.00',
+      amountValue: 3900,
       currency: 'GHS',
       status: 'pendingPayment',
       doctorName: selectedDoctor?.name ?? selectedHospital.name,
@@ -607,8 +607,11 @@ export default function App() {
         onBack={() => setRoute('login')}
         onDone={(profile) => {
           setPatientProfile(profile);
+          setProfileSetupDraft(null);
           setRoute('home');
         }}
+        initialDraft={profileSetupDraft}
+        onDraftChange={setProfileSetupDraft}
       />
     );
   } else if (route === 'login') {
