@@ -1,11 +1,14 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { ScrollView, StyleSheet, View, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import ThemedCard from '../components/ThemedCard';
 import ThemedText from '../components/ThemedText';
 import Button from '../components/Button';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
+import { getConsultationQueue, getProviderStats, getProviderTasks } from '../services/providerDashboard';
 
 type AppointmentStatus = 'waiting' | 'inConsult' | 'completed';
 
@@ -194,11 +197,65 @@ const ProviderDashboardScreen: React.FC<ProviderDashboardScreenProps> = ({
   wrapUpSummaries,
   onScheduleFollowUp,
 }) => {
+  const { user } = useAuth();
   const [selectedDay, setSelectedDay] = React.useState<string>(DAY_OPTIONS[0].id);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [consultationQueue, setConsultationQueue] = React.useState<QueueItem[]>(MOCK_QUEUE);
+  const [providerTasks, setProviderTasks] = React.useState<FollowUpTask[]>(MOCK_TASKS);
+  const [providerStats, setProviderStats] = React.useState<any>(null);
   const scheduleBlocks = MOCK_SCHEDULE[selectedDay] ?? [];
+
+  // Load provider data on mount
+  React.useEffect(() => {
+    const loadProviderData = async () => {
+      if (!user?.id) return;
+
+      try {
+        setIsLoading(true);
+
+        // Load consultation queue
+        const queueResult = await getConsultationQueue(user.id);
+        if (queueResult.success && queueResult.data) {
+          setConsultationQueue(queueResult.data);
+        }
+
+        // Load provider tasks
+        const tasksResult = await getProviderTasks(user.id);
+        if (tasksResult.success && tasksResult.data) {
+          setProviderTasks(tasksResult.data);
+        }
+
+        // Load provider statistics
+        const statsResult = await getProviderStats(user.id);
+        if (statsResult.success) {
+          setProviderStats(statsResult.data);
+        }
+      } catch (err: any) {
+        setError({
+          title: 'Load Failed',
+          message: err.message || 'Failed to load provider dashboard.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadProviderData();
+  }, [user?.id]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {error && (
+        <ErrorAlert
+          title={error.title}
+          message={error.message}
+          onDismiss={() => setError(null)}
+          onRetry={() => setError(null)}
+          visible={!!error}
+        />
+      )}
+
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.navButton} onPress={onBack} activeOpacity={0.85}>
           <Ionicons name="arrow-back" size={18} color={theme.colors.primary.main} />
