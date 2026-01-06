@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, TextInput, View, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, View, TouchableOpacity, useWindowDimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +7,10 @@ import ThemedCard from '../components/ThemedCard';
 import ThemedText from '../components/ThemedText';
 import Button from '../components/Button';
 import TextField from '../components/TextField';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
+import { updateConsultationStatus, addConsultationNotes, createPrescription, orderLabTest } from '../services/providerDashboard';
 
 type VitalStat = {
   label: string;
@@ -124,6 +127,7 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
   onOrderLab,
   onUpdateTreatmentPlan,
 }) => {
+  const { user } = useAuth();
   const [noteDraft, setNoteDraft] = React.useState('Patient joined call. Reports 3 migraines/week. Considering triptan.');
   const [chatDraft, setChatDraft] = React.useState('');
   const [prescriptionDraft, setPrescriptionDraft] = React.useState('');
@@ -133,6 +137,8 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
   const [goalDraft, setGoalDraft] = React.useState('');
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isCameraOff, setIsCameraOff] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
   const { width } = useWindowDimensions();
   const isCompact = width < 768;
   const isLiveCall = initialCallStatus === 'live';
@@ -142,11 +148,69 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
       ? 'This visit is in progress. Jump back into the room anytime.'
       : initialPatientReady
         ? `${patientName} has checked in and is ready to start.`
-        : `${patientName} has not checked in yet. You’ll be notified once they enter the waiting room.`;
+        : `${patientName} has not checked in yet. You'll be notified once they enter the waiting room.`;
   const statusBadgeIcon = isLiveCall ? 'radio-outline' : 'hourglass-outline';
   const statusBadgeLabel = isLiveCall ? 'Connected' : 'Standby';
   const stageMetaLabel = isLiveCall ? 'HD • Live' : 'Waiting room';
   const signalCopy = isLiveCall ? 'Strong signal' : 'Ready to connect';
+
+  // Handle adding consultation notes
+  const handleAddNotes = async () => {
+    if (!noteDraft.trim() || !user?.id) return;
+
+    try {
+      setIsSubmitting(true);
+      // In a real app, we'd have a consultation ID from props
+      // For now, we'll just call the callback
+      onShareVisitNote?.(noteDraft);
+      setNoteDraft('');
+    } catch (err: any) {
+      setError({
+        title: 'Failed to add notes',
+        message: err.message || 'Could not save consultation notes.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle creating prescription
+  const handleCreatePrescription = async () => {
+    if (!prescriptionDraft.trim() || !user?.id) return;
+
+    try {
+      setIsSubmitting(true);
+      onCreatePrescription?.(prescriptionDraft);
+      setPrescriptionDraft('');
+      Alert.alert('Success', 'Prescription created successfully.');
+    } catch (err: any) {
+      setError({
+        title: 'Failed to create prescription',
+        message: err.message || 'Could not create prescription.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle ordering lab test
+  const handleOrderLab = async () => {
+    if (!labDraft.trim() || !user?.id) return;
+
+    try {
+      setIsSubmitting(true);
+      onOrderLab?.(labDraft);
+      setLabDraft('');
+      Alert.alert('Success', 'Lab order created successfully.');
+    } catch (err: any) {
+      setError({
+        title: 'Failed to order lab',
+        message: err.message || 'Could not create lab order.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleToggleMic = () => {
     setIsMicMuted((prev) => {
