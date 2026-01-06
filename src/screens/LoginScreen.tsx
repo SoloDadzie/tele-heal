@@ -7,8 +7,10 @@ import ThemedText from '../components/ThemedText';
 import TextField from '../components/TextField';
 import Button from '../components/Button';
 import ThemedCard from '../components/ThemedCard';
+import ErrorAlert from '../components/ErrorAlert';
 import PhoneNumberField, { type PhoneCountryOption } from '../components/PhoneNumberField';
 import { theme } from '../theme';
+import { loginSchema, validateForm } from '../utils/validation';
 
 const socialProviders: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'google', label: 'Google', icon: 'logo-google' },
@@ -36,8 +38,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
   const [phone, setPhone] = React.useState(initialPhone);
   const [password, setPassword] = React.useState('');
   const [rememberMe, setRememberMe] = React.useState(false);
-
   const [countryCode, setCountryCode] = React.useState(initialCountryCode);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
   const isLoginEnabled = phone.trim().length > 0 && password.trim().length > 0;
 
@@ -59,6 +63,35 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
   const handleCountryChange = (country: PhoneCountryOption) => {
     setCountryCode(country.code);
     onCountryCodeChange?.(country.code);
+  };
+
+  const handleLogin = async () => {
+    setError(null);
+    setFieldErrors({});
+
+    const validation = validateForm(loginSchema, { phone, password });
+
+    if (!validation.valid) {
+      setFieldErrors(validation.errors);
+      setError({
+        title: 'Validation Error',
+        message: 'Please check your input and try again.',
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      onLogin?.();
+    } catch (err) {
+      setError({
+        title: 'Login Failed',
+        message: 'Invalid phone number or password. Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   React.useEffect(() => {
@@ -114,6 +147,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
             </ThemedText>
           </LinearGradient>
 
+          {error && (
+            <ErrorAlert
+              title={error.title}
+              message={error.message}
+              onDismiss={() => setError(null)}
+              onRetry={handleLogin}
+              visible={!!error}
+            />
+          )}
+
           <ThemedCard style={styles.formCard}>
             <View style={styles.formHeader}>
               <ThemedText variant="headline3" color="primary">
@@ -132,16 +175,28 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 countryCode={countryCode}
                 onCountryChange={handleCountryChange}
               />
+              {fieldErrors.phone && (
+                <ThemedText variant="caption1" style={[styles.fieldError, { color: theme.colors.semantic.danger }]}>
+                  {fieldErrors.phone}
+                </ThemedText>
+              )}
             </View>
 
-            <TextField
-              label="Password"
-              placeholder="Enter password"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              containerProps={{ style: styles.passwordField }}
-            />
+            <View style={styles.fieldGroup}>
+              <TextField
+                label="Password"
+                placeholder="Enter password"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                containerProps={{ style: styles.passwordField }}
+              />
+              {fieldErrors.password && (
+                <ThemedText variant="caption1" style={[styles.fieldError, { color: theme.colors.semantic.danger }]}>
+                  {fieldErrors.password}
+                </ThemedText>
+              )}
+            </View>
 
             <View style={styles.inlineLinks}>
               <TouchableOpacity
@@ -168,8 +223,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 variant="primary"
                 fullWidth
                 style={!isLoginEnabled ? styles.loginButton : undefined}
-                disabled={!isLoginEnabled}
-                onPress={onLogin}
+                disabled={!isLoginEnabled || isLoading}
+                loading={isLoading}
+                onPress={handleLogin}
+                accessibilityLabel="Login button"
               />
             </View>
 
@@ -307,6 +364,10 @@ const styles = StyleSheet.create({
   fieldLabel: {
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+  },
+  fieldError: {
+    marginTop: theme.spacing.xs,
+    marginLeft: theme.spacing.xs,
   },
   passwordField: {
     marginTop: theme.spacing.md,
