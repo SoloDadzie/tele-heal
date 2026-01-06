@@ -13,6 +13,7 @@ export type ProviderInviteContext = {
   email: string;
   fullName?: string;
   specialties?: string[];
+  accountVerifiedAt?: string;
 };
 
 export interface ProviderInviteScreenProps {
@@ -21,6 +22,7 @@ export interface ProviderInviteScreenProps {
 }
 
 type ValidationState = 'idle' | 'validating' | 'success' | 'error' | 'expired';
+type VerificationPhase = 'invite' | 'otp' | 'verified';
 
 const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
   onBack,
@@ -30,13 +32,24 @@ const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
   const [inviteCode, setInviteCode] = React.useState('');
   const [status, setStatus] = React.useState<ValidationState>('idle');
   const [statusMessage, setStatusMessage] = React.useState('');
+  const [phase, setPhase] = React.useState<VerificationPhase>('invite');
+  const [otp, setOtp] = React.useState('');
+  const [otpStatus, setOtpStatus] = React.useState<'idle' | 'checking' | 'success' | 'error'>('idle');
+  const [otpMessage, setOtpMessage] = React.useState('');
+  const MOCK_OTP = '000000';
 
   const isFormValid = email.trim().length > 0 && inviteCode.trim().length > 0;
+  const isOtpEnabled = phase === 'otp' || phase === 'verified';
+  const isOtpValid = otp.trim().length === MOCK_OTP.length;
 
   const handleValidate = () => {
     if (!isFormValid) return;
     setStatus('validating');
     setStatusMessage('');
+    setPhase('invite');
+    setOtp('');
+    setOtpStatus('idle');
+    setOtpMessage('');
 
     setTimeout(() => {
       const normalized = inviteCode.trim().toUpperCase();
@@ -52,14 +65,34 @@ const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
       }
 
       setStatus('success');
-      setStatusMessage('Invite verified. Let’s complete your onboarding.');
+      setPhase('otp');
+      setStatusMessage('Invite verified. Enter the 6-digit code we just sent to your email.');
+    }, 900);
+  };
+
+  const handleVerifyOtp = () => {
+    if (!isOtpValid || phase === 'verified') return;
+    setOtpStatus('checking');
+    setOtpMessage('');
+
+    setTimeout(() => {
+      if (otp.trim() !== MOCK_OTP) {
+        setOtpStatus('error');
+        setOtpMessage('Code does not match. Please double-check the digits.');
+        return;
+      }
+
+      setOtpStatus('success');
+      setOtpMessage('Account verified. You can continue to onboarding.');
+      setPhase('verified');
       onInviteValidated?.({
-        inviteCode: normalized,
+        inviteCode: inviteCode.trim().toUpperCase(),
         email: email.trim(),
         fullName: 'Dr. Jordan Ama',
         specialties: ['Primary Care', 'Telemedicine'],
+        accountVerifiedAt: new Date().toISOString(),
       });
-    }, 900);
+    }, 600);
   };
 
   const renderStatusIcon = () => {
@@ -111,7 +144,7 @@ const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
             </ThemedText>
           </View>
 
-          <TextField label="Work email" value={email} keyboardType="email-address" onChangeText={setEmail} />
+          <TextField label="Work email" value={email} keyboardType="email-address" onChangeText={setEmail} editable={phase === 'invite'} />
           <View style={styles.fieldSpacing} />
           <TextField
             label="Invite code"
@@ -119,6 +152,7 @@ const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
             value={inviteCode}
             autoCapitalize="characters"
             onChangeText={setInviteCode}
+            editable={phase === 'invite'}
           />
 
           {!!statusMessage && (
@@ -130,14 +164,61 @@ const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
             </View>
           )}
 
-          <Button
-            label={status === 'validating' ? 'Validating...' : 'Validate invite'}
-            variant="primary"
-            fullWidth
-            disabled={!isFormValid || status === 'validating'}
-            onPress={handleValidate}
-          />
+          {phase === 'invite' && (
+            <Button
+              label={status === 'validating' ? 'Validating...' : 'Validate invite'}
+              variant="primary"
+              fullWidth
+              disabled={!isFormValid || status === 'validating'}
+              onPress={handleValidate}
+            />
+          )}
         </ThemedCard>
+
+        {isOtpEnabled && (
+          <ThemedCard style={styles.otpCard}>
+            <View style={styles.formHeader}>
+              <ThemedText variant="headline3" color="primary">
+                Secure verification
+              </ThemedText>
+              <ThemedText variant="body3" color="secondary">
+                Enter the one-time code we emailed to {email || 'your inbox'} to confirm your identity.
+              </ThemedText>
+            </View>
+            <TextField
+              label="6-digit code"
+              value={otp}
+              onChangeText={setOtp}
+              keyboardType="number-pad"
+              placeholder="••••••"
+              maxLength={6}
+            />
+            <ThemedText variant="caption1" color="secondary">
+              Tester hint: use 000000 while backend delivery is pending.
+            </ThemedText>
+            {!!otpMessage && (
+              <ThemedText
+                variant="caption1"
+                color={otpStatus === 'success' ? 'primary' : 'secondary'}
+                style={otpStatus === 'error' ? styles.otpError : undefined}
+              >
+                {otpMessage}
+              </ThemedText>
+            )}
+            {phase !== 'verified' && (
+              <Button
+                label={otpStatus === 'checking' ? 'Verifying...' : 'Verify code'}
+                variant="primary"
+                fullWidth
+                disabled={!isOtpValid || otpStatus === 'checking'}
+                onPress={handleVerifyOtp}
+              />
+            )}
+            {phase === 'verified' && (
+              <Button label="Verified" variant="secondary" fullWidth disabled leftIcon="checkmark-circle-outline" />
+            )}
+          </ThemedCard>
+        )}
 
         <ThemedCard style={styles.infoCard}>
           <View style={styles.infoRow}>
@@ -264,6 +345,13 @@ const styles = StyleSheet.create({
   infoCard: {
     padding: theme.spacing.lg,
     gap: theme.spacing.md,
+  },
+  otpCard: {
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  otpError: {
+    color: theme.colors.semantic.danger,
   },
   infoRow: {
     flexDirection: 'row',

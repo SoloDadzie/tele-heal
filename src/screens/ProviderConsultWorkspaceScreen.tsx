@@ -29,6 +29,18 @@ type PatientHistoryEntry = {
   summary: string;
 };
 
+type ProviderOrder = {
+  id: string;
+  type: 'prescription' | 'lab';
+  detail: string;
+  timestamp: string;
+};
+
+type TreatmentPlan = {
+  summary: string;
+  goals: string[];
+};
+
 export type ProviderConsultWorkspaceScreenProps = {
   patientName: string;
   appointmentReason: string;
@@ -50,8 +62,11 @@ export type ProviderConsultWorkspaceScreenProps = {
   chatMessages?: { id: string; author: 'provider' | 'patient'; text: string }[];
   sharedNotes?: string[];
   patientHistory?: PatientHistoryEntry[];
+  orders?: ProviderOrder[];
+  treatmentPlan?: TreatmentPlan;
   onCreatePrescription?: (note: string) => void;
   onOrderLab?: (note: string) => void;
+  onUpdateTreatmentPlan?: (plan: TreatmentPlan) => void;
 };
 
 const MOCK_VITALS: VitalStat[] = [
@@ -103,13 +118,19 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
   chatMessages = [],
   sharedNotes = [],
   patientHistory = [],
+  orders = [],
+  treatmentPlan,
   onCreatePrescription,
   onOrderLab,
+  onUpdateTreatmentPlan,
 }) => {
   const [noteDraft, setNoteDraft] = React.useState('Patient joined call. Reports 3 migraines/week. Considering triptan.');
   const [chatDraft, setChatDraft] = React.useState('');
   const [prescriptionDraft, setPrescriptionDraft] = React.useState('');
   const [labDraft, setLabDraft] = React.useState('');
+  const [planSummary, setPlanSummary] = React.useState(treatmentPlan?.summary ?? '');
+  const [planGoals, setPlanGoals] = React.useState<string[]>(treatmentPlan?.goals ?? []);
+  const [goalDraft, setGoalDraft] = React.useState('');
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isCameraOff, setIsCameraOff] = React.useState(false);
   const { width } = useWindowDimensions();
@@ -202,6 +223,28 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
     if (!trimmed) return;
     onOrderLab?.(trimmed);
     setLabDraft('');
+  };
+
+  React.useEffect(() => {
+    setPlanSummary(treatmentPlan?.summary ?? '');
+    setPlanGoals(treatmentPlan?.goals ?? []);
+  }, [treatmentPlan]);
+
+  const handleAddGoal = () => {
+    const trimmed = goalDraft.trim();
+    if (!trimmed) return;
+    setPlanGoals((prev) => [...prev, trimmed]);
+    setGoalDraft('');
+  };
+
+  const handleRemoveGoal = (idx: number) => {
+    setPlanGoals((prev) => prev.filter((_, goalIndex) => goalIndex !== idx));
+  };
+
+  const handleSavePlan = () => {
+    const summary = planSummary.trim();
+    if (!summary || planGoals.length === 0) return;
+    onUpdateTreatmentPlan?.({ summary, goals: planGoals });
   };
 
   return (
@@ -500,6 +543,22 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
               Orders & quick actions
             </ThemedText>
           </View>
+          {orders.length > 0 && (
+            <View style={styles.orderLog}>
+              {orders.map((order) => (
+                <View key={order.id} style={styles.orderRow}>
+                  <View style={styles.orderMeta}>
+                    <ThemedText variant="caption1" color="secondary">
+                      {order.timestamp} · {order.type === 'prescription' ? 'Rx' : 'Lab'}
+                    </ThemedText>
+                    <ThemedText variant="body3" color="primary">
+                      {order.detail}
+                    </ThemedText>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
           <View style={styles.orderSection}>
             <ThemedText variant="body3" color="secondary">
               Prescription note
@@ -542,7 +601,63 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
           </View>
         </ThemedCard>
 
-        <ThemedCard style={[styles.notesCard, isCompact && styles.notesCardCompact]}>
+        <ThemedCard style={styles.planCard}>
+          <View style={styles.cardHeader}>
+            <ThemedText variant="headline3" color="primary">
+              Treatment plan
+            </ThemedText>
+          </View>
+          <TextField
+            label="Summary"
+            multiline
+            numberOfLines={3}
+            value={planSummary}
+            onChangeText={setPlanSummary}
+            placeholder="High-level guidance, next steps..."
+            textAlignVertical="top"
+          />
+          <View style={styles.goalInputRow}>
+            <View style={styles.goalInputField}>
+              <TextField
+                label="New goal"
+                value={goalDraft}
+                onChangeText={setGoalDraft}
+                placeholder="e.g. Track migraines daily"
+              />
+            </View>
+            <Button
+              label="Add"
+              variant="secondary"
+              size="sm"
+              onPress={handleAddGoal}
+              disabled={!goalDraft.trim()}
+              style={styles.goalAddButton}
+            />
+          </View>
+          {planGoals.length > 0 && (
+            <View style={styles.goalList}>
+              {planGoals.map((goal, idx) => (
+                <View key={`${goal}-${idx}`} style={styles.goalRow}>
+                  <ThemedText variant="body3" color="primary" style={{ flex: 1 }}>
+                    {goal}
+                  </ThemedText>
+                  <TouchableOpacity onPress={() => handleRemoveGoal(idx)} style={styles.goalRemove} activeOpacity={0.75}>
+                    <Ionicons name="close" size={14} color={theme.colors.text.secondary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+          <Button
+            label="Save plan"
+            variant="primary"
+            size="sm"
+            disabled={!planSummary.trim() || planGoals.length === 0}
+            onPress={handleSavePlan}
+          />
+        </ThemedCard>
+
+        <ThemedCard style={[styles.columnCard, styles.notesCard, isCompact && styles.columnCardFullWidth]}>
           {sharedNotes.length > 0 && (
             <View style={styles.sharedNotesList}>
               {sharedNotes.map((note, index) => (
@@ -866,8 +981,53 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     gap: theme.spacing.md,
   },
+  orderLog: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border.light,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+  },
+  orderRow: {
+    padding: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border.light,
+  },
+  orderMeta: {
+    gap: theme.spacing.xs / 2,
+  },
   orderSection: {
     gap: theme.spacing.sm,
+  },
+  planCard: {
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  goalInputRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    alignItems: 'flex-end',
+  },
+  goalInputField: {
+    flex: 1,
+  },
+  goalAddButton: {
+    paddingHorizontal: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  goalList: {
+    gap: theme.spacing.xs,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border.light,
+  },
+  goalRemove: {
+    padding: theme.spacing.xs,
   },
   waitingCard: {
     padding: theme.spacing.lg,

@@ -100,11 +100,46 @@ type ProviderConsultContext = {
   scheduledTime: string;
 };
 
+type PatientHistoryEntry = {
+  id: string;
+  title: string;
+  date: string;
+  summary: string;
+};
+
+type ProviderOrder = {
+  id: string;
+  type: 'prescription' | 'lab';
+  detail: string;
+  timestamp: string;
+};
+
+type TreatmentPlan = {
+  summary: string;
+  goals: string[];
+};
+
+type WrapUpSummary = {
+  id: string;
+  patientName: string;
+  reason: string;
+  scheduledTime: string;
+  notes: string;
+  billingCode: string;
+  followUp: string;
+  followUpDetails: string;
+  followUpDate?: string;
+  followUpTime?: string;
+  followUpScheduled: boolean;
+};
+
 type ProviderCallSession = ProviderConsultContext & {
   status: 'waiting' | 'live';
   patientReady: boolean;
   chat: ProviderCallMessage[];
   notes: string[];
+  orders: ProviderOrder[];
+  treatmentPlan: TreatmentPlan;
 };
 
 type IntakePreview = {
@@ -170,11 +205,9 @@ const DEFAULT_PROVIDER_CHAT: ProviderCallMessage[] = [
 
 const DEFAULT_PROVIDER_NOTES = ['Pre-visit summary shared with patient.'];
 
-type PatientHistoryEntry = {
-  id: string;
-  title: string;
-  date: string;
-  summary: string;
+const DEFAULT_TREATMENT_PLAN: TreatmentPlan = {
+  summary: 'Continue tracking migraine triggers and hydration.',
+  goals: ['Maintain headache diary', 'Take magnesium supplement nightly', 'Schedule follow-up in 4 weeks'],
 };
 
 const MOCK_PATIENT_HISTORY: Record<string, PatientHistoryEntry[]> = {
@@ -208,6 +241,8 @@ const createCallSession = (context: ProviderConsultContext): ProviderCallSession
   patientReady: true,
   chat: [...DEFAULT_PROVIDER_CHAT],
   notes: [...DEFAULT_PROVIDER_NOTES],
+  orders: [],
+  treatmentPlan: DEFAULT_TREATMENT_PLAN,
 });
 
 const DEFAULT_SCHEDULE_SETTINGS: ProviderScheduleSettingsDraft = {
@@ -326,6 +361,7 @@ export default function App() {
   const [preConsultAppointment, setPreConsultAppointment] = React.useState<Appointment | null>(null);
   const [activeConsultation, setActiveConsultation] = React.useState<Appointment | null>(null);
   const [postConsultAppointment, setPostConsultAppointment] = React.useState<Appointment | null>(null);
+  const [wrapUpSummaries, setWrapUpSummaries] = React.useState<WrapUpSummary[]>([]);
   const [providerScheduleSettings, setProviderScheduleSettings] =
     React.useState<ProviderScheduleSettingsDraft>(DEFAULT_SCHEDULE_SETTINGS);
   const [pendingWrapUpContext, setPendingWrapUpContext] = React.useState<ProviderConsultContext | null>(null);
@@ -340,13 +376,61 @@ export default function App() {
     setProviderCallSession((prev) => (prev ? { ...prev, notes: [text, ...prev.notes] } : prev));
   }, []);
 
-  const handleCreatePrescription = React.useCallback((note: string) => {
-    Alert.alert('Prescription sent', note);
+  const appendProviderOrder = React.useCallback((type: 'prescription' | 'lab', detail: string) => {
+    setProviderCallSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            orders: [
+              {
+                id: `order-${Date.now()}`,
+                type,
+                detail,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              },
+              ...prev.orders,
+            ],
+          }
+        : prev,
+    );
   }, []);
 
-  const handleOrderLab = React.useCallback((note: string) => {
-    Alert.alert('Lab ordered', note);
+  const updateTreatmentPlan = React.useCallback((plan: TreatmentPlan) => {
+    setProviderCallSession((prev) => (prev ? { ...prev, treatmentPlan: plan } : prev));
   }, []);
+
+  const addWrapUpSummary = React.useCallback(
+    (payload: Omit<WrapUpSummary, 'id' | 'patientName' | 'reason' | 'scheduledTime' | 'followUpScheduled'>) => {
+      if (!pendingWrapUpContext) return;
+      setWrapUpSummaries((prev) => [
+        {
+          id: `wrap-${Date.now()}`,
+          patientName: pendingWrapUpContext.patientName,
+          reason: pendingWrapUpContext.reason,
+          scheduledTime: pendingWrapUpContext.scheduledTime,
+          followUpScheduled: false,
+          ...payload,
+        },
+        ...prev,
+      ]);
+    },
+    [pendingWrapUpContext],
+  );
+
+  const markFollowUpScheduled = React.useCallback((wrapId: string) => {
+    setWrapUpSummaries((prev) =>
+      prev.map((item) => (item.id === wrapId ? { ...item, followUpScheduled: true } : item)),
+    );
+    Alert.alert('Follow-up scheduled', 'This wrap-up has been marked as scheduled.');
+  }, []);
+
+  const handleCreatePrescription = React.useCallback((note: string) => {
+    appendProviderOrder('prescription', note);
+  }, [appendProviderOrder]);
+
+  const handleOrderLab = React.useCallback((note: string) => {
+    appendProviderOrder('lab', note);
+  }, [appendProviderOrder]);
   const [documents] = React.useState<DocumentRecord[]>([
     {
       id: 'doc-1',
@@ -957,87 +1041,6 @@ export default function App() {
     } else {
       const providerName = providerDraft.fullName || providerInviteContext?.fullName || 'Tele Heal Provider';
 
-      const mapAppointmentToContext = (appointmentId: string): ProviderConsultContext => {
-        const fallback: ProviderConsultContext = {
-          id: appointmentId,
-          patientName: 'Tele Heal Patient',
-          reason: 'General consultation',
-          scheduledTime: 'Today · 09:00',
-        };
-
-        const lookup: Record<string, ProviderConsultContext> = {
-          'queue-1': {
-            id: 'queue-1',
-            patientName: 'Ama Mensah',
-            reason: 'Migraine follow-up',
-            scheduledTime: 'Today · 09:00',
-          },
-          'queue-2': {
-            id: 'queue-2',
-            patientName: 'Kwesi Boateng',
-            reason: 'Skin rash photo review',
-            scheduledTime: 'Async review · due 12:00',
-          },
-          'queue-3': {
-            id: 'queue-3',
-            patientName: 'Linda Asare',
-            reason: 'Hypertension check-in',
-            scheduledTime: 'Today · 10:30',
-          },
-          'sched-1': {
-            id: 'sched-1',
-            patientName: 'Ama Mensah',
-            reason: 'Migraine follow-up',
-            scheduledTime: '09:00 – 09:25',
-          },
-          'sched-2': {
-            id: 'sched-2',
-            patientName: 'Linda Asare',
-            reason: 'Hypertension check-in',
-            scheduledTime: '10:30 – 11:00',
-          },
-          'sched-3': {
-            id: 'sched-3',
-            patientName: 'Kwesi Boateng',
-            reason: 'Skin rash photo review',
-            scheduledTime: 'Async · due 12:00',
-          },
-        };
-
-        return lookup[appointmentId] ?? fallback;
-      };
-
-      const createCallSession = (context: ProviderConsultContext): ProviderCallSession => ({
-        ...context,
-        status: 'waiting',
-        patientReady: true,
-        chat: [
-          { id: 'chat-1', author: 'patient', text: 'Hi doctor! I’m ready whenever you are.' },
-          { id: 'chat-2', author: 'provider', text: 'Thanks Ama, reviewing your intake now.' },
-        ],
-        notes: [
-          'Pre-visit summary shared with patient.',
-        ],
-      });
-
-      const updateCallSession = (updater: (session: ProviderCallSession) => ProviderCallSession) => {
-        setProviderCallSession((prev) => (prev ? updater(prev) : prev));
-      };
-
-      const appendProviderChat = (text: string) => {
-        updateCallSession((session) => ({
-          ...session,
-          chat: [...session.chat, { id: `chat-${Date.now()}`, author: 'provider', text }],
-        }));
-      };
-
-      const appendProviderNote = (text: string) => {
-        updateCallSession((session) => ({
-          ...session,
-          notes: [text, ...session.notes],
-        }));
-      };
-
       const handleComingSoon = (title: string, body: string) => {
         Alert.alert(title, body);
       };
@@ -1055,6 +1058,8 @@ export default function App() {
           onOpenSettings={() => setRoute('providerScheduleSettings')}
           scheduleSettings={providerScheduleSettings}
           intakePreviews={MOCK_INTAKE_PREVIEWS}
+          wrapUpSummaries={wrapUpSummaries}
+          onScheduleFollowUp={(id) => markFollowUpScheduled(id)}
           onOpenTasks={() =>
             handleComingSoon(
               'Task center coming soon',
@@ -1086,8 +1091,11 @@ export default function App() {
           chatMessages={session?.chat ?? []}
           sharedNotes={session?.notes ?? []}
           patientHistory={MOCK_PATIENT_HISTORY[providerConsultContext.id] ?? []}
+          orders={session?.orders ?? []}
+          treatmentPlan={session?.treatmentPlan}
           onCreatePrescription={handleCreatePrescription}
           onOrderLab={handleOrderLab}
+          onUpdateTreatmentPlan={updateTreatmentPlan}
           onBack={() => setRoute('providerDashboard')}
           onComplete={() => {
             setPendingWrapUpContext(providerConsultContext);
@@ -1163,7 +1171,8 @@ export default function App() {
           appointmentReason={pendingWrapUpContext.reason}
           scheduledTime={pendingWrapUpContext.scheduledTime}
           onBack={() => setRoute('providerDashboard')}
-          onSubmit={() => {
+          onSubmit={(payload) => {
+            addWrapUpSummary(payload);
             Alert.alert('Wrap-up saved', 'Notes, billing, and follow-up have been recorded.');
             setPendingWrapUpContext(null);
             setRoute('providerDashboard');

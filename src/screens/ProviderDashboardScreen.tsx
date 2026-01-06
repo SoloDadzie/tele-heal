@@ -64,6 +64,19 @@ type ProviderDashboardScreenProps = {
     medications: string[];
     flags?: string;
   }[];
+  wrapUpSummaries?: {
+    id: string;
+    patientName: string;
+    reason: string;
+    scheduledTime: string;
+    billingCode: string;
+    followUp: string;
+    followUpDetails: string;
+    followUpDate?: string;
+    followUpTime?: string;
+    followUpScheduled?: boolean;
+  }[];
+  onScheduleFollowUp?: (wrapId: string) => void;
 };
 
 const DAY_OPTIONS: ScheduleDay[] = [
@@ -178,6 +191,8 @@ const ProviderDashboardScreen: React.FC<ProviderDashboardScreenProps> = ({
   onOpenSettings,
   scheduleSettings,
   intakePreviews,
+  wrapUpSummaries,
+  onScheduleFollowUp,
 }) => {
   const [selectedDay, setSelectedDay] = React.useState<string>(DAY_OPTIONS[0].id);
   const scheduleBlocks = MOCK_SCHEDULE[selectedDay] ?? [];
@@ -289,6 +304,72 @@ const ProviderDashboardScreen: React.FC<ProviderDashboardScreenProps> = ({
                       </ThemedText>
                     </View>
                   )}
+
+        {wrapUpSummaries && wrapUpSummaries.length > 0 && (
+          <ThemedCard style={styles.wrapCard}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionHeaderCopy}>
+                <ThemedText variant="headline3" color="primary">
+                  Wrap-up queue
+                </ThemedText>
+                <ThemedText variant="body3" color="secondary">
+                  Finalize follow-ups and billing tasks.
+                </ThemedText>
+              </View>
+            </View>
+            {wrapUpSummaries.map((wrap) => (
+              <View key={wrap.id} style={styles.wrapRow}>
+                <View style={styles.wrapMeta}>
+                  <ThemedText variant="body2" color="primary">
+                    {wrap.patientName}
+                  </ThemedText>
+                  <ThemedText variant="caption1" color="secondary">
+                    {wrap.reason} · {wrap.scheduledTime}
+                  </ThemedText>
+                  <ThemedText variant="caption1" color="secondary">
+                    Billing: {wrap.billingCode}
+                  </ThemedText>
+                  <ThemedText variant="body3" color="primary">
+                    {wrap.followUp}
+                  </ThemedText>
+                  {wrap.followUpDetails ? (
+                    <ThemedText variant="caption1" color="secondary">
+                      {wrap.followUpDetails}
+                    </ThemedText>
+                  ) : null}
+                  {(wrap.followUpDate || wrap.followUpTime) && (
+                    <ThemedText variant="caption1" color="secondary">
+                      Target: {wrap.followUpDate ?? 'Date TBD'} {wrap.followUpTime ?? ''}
+                    </ThemedText>
+                  )}
+                </View>
+                <View style={styles.wrapActions}>
+                  <View
+                    style={[
+                      styles.wrapStatusPill,
+                      wrap.followUpScheduled ? styles.wrapStatusDone : styles.wrapStatusPending,
+                    ]}
+                  >
+                    <ThemedText
+                      variant="caption1"
+                      color={wrap.followUpScheduled ? 'primary' : 'secondary'}
+                    >
+                      {wrap.followUpScheduled ? 'Scheduled' : 'Action needed'}
+                    </ThemedText>
+                  </View>
+                  {!wrap.followUpScheduled && (
+                    <Button
+                      label="Mark scheduled"
+                      variant="secondary"
+                      size="sm"
+                      onPress={() => onScheduleFollowUp?.(wrap.id)}
+                    />
+                  )}
+                </View>
+              </View>
+            ))}
+          </ThemedCard>
+        )}
                 </View>
                 <Button label="Open intake" variant="secondary" size="sm" style={styles.inlineButton} onPress={onOpenSchedule} />
               </View>
@@ -749,6 +830,36 @@ const styles = StyleSheet.create({
   tasksCard: {
     padding: theme.spacing.lg,
     gap: theme.spacing.md,
+  },
+  wrapCard: {
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  wrapRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border.light,
+  },
+  wrapMeta: {
+    flex: 1,
+    gap: theme.spacing.xs / 2,
+  },
+  wrapActions: {
+    alignItems: 'flex-end',
+    gap: theme.spacing.sm,
+  },
+  wrapStatusPill: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs / 1.2,
+    borderRadius: theme.borderRadius.full,
+  },
+  wrapStatusDone: {
+    backgroundColor: theme.colors.semantic.successLight,
+  },
+  wrapStatusPending: {
+    backgroundColor: theme.colors.semantic.warningLight,
   },
   settingsCard: {
     padding: theme.spacing.lg,

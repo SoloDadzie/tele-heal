@@ -28,6 +28,11 @@ export type ProviderProfileDraft = {
   availabilitySlots: Record<string, string[]>;
   feeCurrency: string;
   trainingAcknowledged: boolean;
+  licenseDocuments: string[];
+  malpracticeDocuments: string[];
+  verificationNotes: string;
+  trainingModules: Record<string, boolean>;
+  trainingCompletedAt?: string;
 };
 
 export interface ProviderOnboardingScreenProps {
@@ -37,7 +42,7 @@ export interface ProviderOnboardingScreenProps {
   onSubmit?: (draft: ProviderProfileDraft) => void;
 }
 
-type StepKey = 'profile' | 'credentials' | 'services' | 'availability' | 'review';
+type StepKey = 'profile' | 'credentials' | 'services' | 'availability' | 'training' | 'review';
 
 type Step = {
   key: StepKey;
@@ -47,13 +52,19 @@ type Step = {
 
 const STEPS: Step[] = [
   { key: 'profile', title: 'Your profile', subtitle: 'Basic contact info and introductions.' },
-  { key: 'credentials', title: 'Credentials', subtitle: 'Licensing and experience.' },
+  { key: 'credentials', title: 'Credentials', subtitle: 'Licensing and malpractice uploads.' },
   { key: 'services', title: 'Services', subtitle: 'Specialties, offerings, and consultation mode.' },
   { key: 'availability', title: 'Availability & rates', subtitle: 'Let patients know when you’re free.' },
+  { key: 'training', title: 'Training module', subtitle: 'Complete Tele Heal walkthrough.' },
   { key: 'review', title: 'Review & submit', subtitle: 'Double-check before sending to Tele Heal.' },
 ];
 
 const SPECIALTY_OPTIONS = ['Primary Care', 'Dermatology', 'Cardiology', 'Mental Health', 'Pediatrics'];
+const TRAINING_MODULES = [
+  { id: 'platform', title: 'Platform orientation', duration: '8 min' },
+  { id: 'clinical', title: 'Virtual care clinical protocol', duration: '12 min' },
+  { id: 'security', title: 'Data security & privacy', duration: '6 min' },
+];
 
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SLOT_OPTIONS = ['Morning', 'Afternoon', 'Evening'];
@@ -86,6 +97,14 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
     }, {}),
     feeCurrency: 'GHS',
     trainingAcknowledged: false,
+    licenseDocuments: [],
+    malpracticeDocuments: [],
+    verificationNotes: '',
+    trainingModules: TRAINING_MODULES.reduce<Record<string, boolean>>((acc, module) => {
+      acc[module.id] = false;
+      return acc;
+    }, {}),
+    trainingCompletedAt: undefined,
   });
   const [hasSubmitted, setHasSubmitted] = React.useState(false);
 
@@ -119,6 +138,36 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
       };
     });
   };
+
+  const addMockAttachment = (type: 'license' | 'malpractice') => {
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const fileLabel = type === 'license' ? `License-${prevRandomId()}` : `Malpractice-${prevRandomId()}`;
+    setDraft((prev) => ({
+      ...prev,
+      licenseDocuments: type === 'license' ? [...prev.licenseDocuments, `${fileLabel}.pdf`] : prev.licenseDocuments,
+      malpracticeDocuments:
+        type === 'malpractice' ? [...prev.malpracticeDocuments, `${fileLabel}.pdf`] : prev.malpracticeDocuments,
+      verificationNotes:
+        type === 'license'
+          ? `Last uploaded at ${timestamp}`
+          : prev.verificationNotes || `Uploaded ${timestamp}, pending credentialing.`,
+    }));
+  };
+
+  const toggleTrainingModule = (moduleId: string) => {
+    setDraft((prev) => {
+      const nextModules = { ...prev.trainingModules, [moduleId]: !prev.trainingModules[moduleId] };
+      const allComplete = Object.values(nextModules).every(Boolean);
+      return {
+        ...prev,
+        trainingModules: nextModules,
+        trainingAcknowledged: allComplete,
+        trainingCompletedAt: allComplete ? new Date().toISOString() : undefined,
+      };
+    });
+  };
+
+  const prevRandomId = () => Math.floor(Math.random() * 900 + 100);
 
   const toggleSlot = (day: string, slot: string) => {
     setDraft((prev) => {
@@ -206,11 +255,61 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
             />
             <View style={styles.fieldSpacing} />
             <ThemedText variant="body2" color="primary">
-              License uploads (mocked)
+              License uploads
             </ThemedText>
             <ThemedText variant="caption1" color="secondary">
-              Upload functionality will connect to the admin review backend later. For now, Tele Heal staff will attach your documents manually.
+              Add at least one photo or PDF of your active license. These are stored securely for credentialing review.
             </ThemedText>
+            <View style={styles.attachmentList}>
+              {draft.licenseDocuments.length === 0 && (
+                <ThemedText variant="caption1" color="secondary">
+                  No documents attached yet.
+                </ThemedText>
+              )}
+              {draft.licenseDocuments.map((doc) => (
+                <View key={doc} style={styles.attachmentRow}>
+                  <Ionicons name="document-text-outline" size={16} color={theme.colors.primary.main} />
+                  <ThemedText variant="body3" color="primary">
+                    {doc}
+                  </ThemedText>
+                  <ThemedText variant="caption1" color="secondary">
+                    Pending review
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+            <Button label="Attach license file" variant="secondary" size="sm" onPress={() => addMockAttachment('license')} />
+            <View style={styles.fieldSpacing} />
+            <ThemedText variant="body2" color="primary">
+              Malpractice coverage
+            </ThemedText>
+            <ThemedText variant="caption1" color="secondary">
+              Upload your current policy or COI to speed up approval.
+            </ThemedText>
+            <View style={styles.attachmentList}>
+              {draft.malpracticeDocuments.length === 0 && (
+                <ThemedText variant="caption1" color="secondary">
+                  No documents attached yet.
+                </ThemedText>
+              )}
+              {draft.malpracticeDocuments.map((doc) => (
+                <View key={doc} style={styles.attachmentRow}>
+                  <Ionicons name="shield-checkmark-outline" size={16} color={theme.colors.primary.main} />
+                  <ThemedText variant="body3" color="primary">
+                    {doc}
+                  </ThemedText>
+                  <ThemedText variant="caption1" color="secondary">
+                    Pending review
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+            <Button label="Attach malpractice proof" variant="secondary" size="sm" onPress={() => addMockAttachment('malpractice')} />
+            {draft.verificationNotes ? (
+              <ThemedText variant="caption1" color="secondary">
+                {draft.verificationNotes}
+              </ThemedText>
+            ) : null}
           </ThemedCard>
         )}
 
@@ -369,6 +468,53 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
           </ThemedCard>
         )}
 
+        {step.key === 'training' && (
+          <ThemedCard style={styles.card}>
+            <ThemedText variant="body2" color="primary">
+              Tele Heal training modules
+            </ThemedText>
+            <ThemedText variant="caption1" color="secondary">
+              Complete each topic below. Once all are marked done you can submit for credentialing.
+            </ThemedText>
+            <View style={styles.trainingList}>
+              {TRAINING_MODULES.map((module) => {
+                const completed = draft.trainingModules[module.id];
+                return (
+                  <TouchableOpacity
+                    key={module.id}
+                    style={[styles.trainingRow, completed && styles.trainingRowDone]}
+                    onPress={() => toggleTrainingModule(module.id)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.trainingCheckbox, completed && styles.trainingCheckboxActive]}>
+                      {completed && <Ionicons name="checkmark" size={14} color={theme.colors.neutral.white} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <ThemedText variant="body3" color="primary">
+                        {module.title}
+                      </ThemedText>
+                      <ThemedText variant="caption1" color="secondary">
+                        {module.duration}
+                      </ThemedText>
+                    </View>
+                    <Ionicons
+                      name={completed ? 'checkmark-circle' : 'play-circle-outline'}
+                      size={18}
+                      color={completed ? theme.colors.semantic.success : theme.colors.primary.main}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Button
+              label={draft.trainingAcknowledged ? 'All modules complete' : 'Mark complete'}
+              variant={draft.trainingAcknowledged ? 'secondary' : 'primary'}
+              size="sm"
+              disabled={draft.trainingAcknowledged}
+            />
+          </ThemedCard>
+        )}
+
         {step.key === 'review' && (
           <ThemedCard style={styles.card}>
             <ThemedText variant="body2" color="primary">
@@ -397,7 +543,17 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
                 },
                 {
                   label: 'Training',
-                  value: draft.trainingAcknowledged ? 'Completed' : 'Pending completion',
+                  value: draft.trainingAcknowledged
+                    ? `Completed ${draft.trainingCompletedAt ? new Date(draft.trainingCompletedAt).toLocaleDateString() : ''}`
+                    : 'Pending completion',
+                },
+                {
+                  label: 'License files',
+                  value: draft.licenseDocuments.length ? `${draft.licenseDocuments.length} uploaded` : 'None',
+                },
+                {
+                  label: 'Malpractice docs',
+                  value: draft.malpracticeDocuments.length ? `${draft.malpracticeDocuments.length} uploaded` : 'None',
                 },
               ].map((item) => (
                 <View key={item.label} style={styles.summaryRow}>
@@ -559,10 +715,33 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primary.main,
     backgroundColor: theme.colors.primary.light,
   },
+  attachmentList: {
+    gap: theme.spacing.xs,
+    marginTop: theme.spacing.xs,
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border.light,
+  },
+  trainingList: {
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
   trainingRow: {
     flexDirection: 'row',
     gap: theme.spacing.sm,
     alignItems: 'flex-start',
+    paddingVertical: theme.spacing.sm / 1.2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border.light,
+  },
+  trainingRowDone: {
+    backgroundColor: theme.colors.background.muted,
+    borderRadius: theme.borderRadius.md,
   },
   trainingCheckbox: {
     width: 24,

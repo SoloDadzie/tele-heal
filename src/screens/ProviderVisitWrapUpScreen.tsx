@@ -17,6 +17,9 @@ type ProviderVisitWrapUpScreenProps = {
     notes: string;
     followUp: string;
     billingCode: string;
+    followUpDetails: string;
+    followUpDate?: string;
+    followUpTime?: string;
   }) => void;
 };
 
@@ -33,9 +36,21 @@ const ProviderVisitWrapUpScreen: React.FC<ProviderVisitWrapUpScreenProps> = ({
   const [notes, setNotes] = React.useState('');
   const [billingCode, setBillingCode] = React.useState(BILLING_CODES[0]);
   const [followUp, setFollowUp] = React.useState(FOLLOW_UP_OPTIONS[0]);
+  const [followUpDetails, setFollowUpDetails] = React.useState('');
+  const [followUpDate, setFollowUpDate] = React.useState('');
+  const [followUpTime, setFollowUpTime] = React.useState('');
+
+  const needsScheduling = followUp !== 'No follow-up needed';
 
   const handleSubmit = () => {
-    onSubmit?.({ notes, followUp, billingCode });
+    onSubmit?.({
+      notes,
+      followUp,
+      billingCode,
+      followUpDetails,
+      followUpDate: followUpDate.trim() || undefined,
+      followUpTime: followUpTime.trim() || undefined,
+    });
   };
 
   return (
@@ -137,6 +152,33 @@ const ProviderVisitWrapUpScreen: React.FC<ProviderVisitWrapUpScreenProps> = ({
               );
             })}
           </View>
+          <TextField
+            label="Instructions to send"
+            value={followUpDetails}
+            onChangeText={setFollowUpDetails}
+            placeholder="E.g. Track symptoms in the diary and message us if anything changes."
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+          {needsScheduling && (
+            <View style={styles.schedulerRow}>
+              <TextField
+                label="Follow-up date"
+                value={followUpDate}
+                onChangeText={setFollowUpDate}
+                placeholder="YYYY-MM-DD"
+                style={styles.schedulerField}
+              />
+              <TextField
+                label="Time"
+                value={followUpTime}
+                onChangeText={setFollowUpTime}
+                placeholder="e.g. 14:30"
+                style={styles.schedulerField}
+              />
+            </View>
+          )}
         </ThemedCard>
       </ScrollView>
 
@@ -194,6 +236,13 @@ const styles = StyleSheet.create({
   },
   followUpButton: {
     justifyContent: 'flex-start',
+  },
+  schedulerRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  schedulerField: {
+    flex: 1,
   },
   footer: {
     padding: theme.spacing.lg,

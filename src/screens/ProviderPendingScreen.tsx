@@ -7,9 +7,11 @@ import ThemedText from '../components/ThemedText';
 import Button from '../components/Button';
 import { theme } from '../theme';
 import type { ProviderProfileDraft } from './ProviderOnboardingScreen';
+import type { ProviderInviteContext } from './ProviderInviteScreen';
 
 export interface ProviderPendingScreenProps {
   draft: ProviderProfileDraft;
+  inviteContext?: ProviderInviteContext | null;
   onBackToStart?: () => void;
   onViewPatientApp?: () => void;
   onOpenDashboard?: () => void;
@@ -17,10 +19,17 @@ export interface ProviderPendingScreenProps {
 
 const ProviderPendingScreen: React.FC<ProviderPendingScreenProps> = ({
   draft,
+  inviteContext,
   onBackToStart,
   onViewPatientApp,
   onOpenDashboard,
 }) => {
+  const licenseCount = draft.licenseDocuments?.length ?? 0;
+  const malpracticeCount = draft.malpracticeDocuments?.length ?? 0;
+  const completedModules = Object.values(draft.trainingModules ?? {}).filter(Boolean).length;
+  const totalModules = Object.keys(draft.trainingModules ?? {}).length;
+  const allTrainingDone = draft.trainingAcknowledged && completedModules === totalModules && totalModules > 0;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -57,6 +66,52 @@ const ProviderPendingScreen: React.FC<ProviderPendingScreenProps> = ({
           </View>
         </ThemedCard>
 
+        <ThemedCard style={styles.card}>
+          <View style={styles.row}>
+            <Ionicons name="mail-open-outline" size={20} color={theme.colors.primary.main} />
+            <View style={styles.copy}>
+              <ThemedText variant="body2" color="primary">
+                Account verification
+              </ThemedText>
+              <ThemedText variant="caption1" color="secondary">
+                {inviteContext?.accountVerifiedAt
+                  ? `Verified ${new Date(inviteContext.accountVerifiedAt).toLocaleString()}`
+                  : 'Pending invite validation'}
+              </ThemedText>
+            </View>
+          </View>
+          <View style={styles.row}>
+            <Ionicons
+              name={licenseCount > 0 ? 'document-text-outline' : 'alert-circle-outline'}
+              size={20}
+              color={licenseCount > 0 ? theme.colors.primary.main : theme.colors.semantic.warning}
+            />
+            <View style={styles.copy}>
+              <ThemedText variant="body2" color="primary">
+                Credentials on file
+              </ThemedText>
+              <ThemedText variant="caption1" color="secondary">
+                {licenseCount} license · {malpracticeCount} malpractice uploads
+              </ThemedText>
+            </View>
+          </View>
+          <View style={styles.row}>
+            <Ionicons
+              name={allTrainingDone ? 'checkmark-circle-outline' : 'play-circle-outline'}
+              size={20}
+              color={allTrainingDone ? theme.colors.semantic.success : theme.colors.primary.main}
+            />
+            <View style={styles.copy}>
+              <ThemedText variant="body2" color="primary">
+                Training progress
+              </ThemedText>
+              <ThemedText variant="caption1" color="secondary">
+                {completedModules}/{totalModules || 3} modules complete
+              </ThemedText>
+            </View>
+          </View>
+        </ThemedCard>
+
         <ThemedCard style={styles.summaryCard}>
           <ThemedText variant="body2" color="primary">
             Submitted details
@@ -69,6 +124,22 @@ const ProviderPendingScreen: React.FC<ProviderPendingScreenProps> = ({
               { label: 'Specialties', value: draft.specialties.join(', ') || '—' },
               { label: 'Consultation mode', value: draft.consultationMode },
               { label: 'Availability', value: draft.availabilityNote || '—' },
+              {
+                label: 'Account verified',
+                value: inviteContext?.accountVerifiedAt
+                  ? new Date(inviteContext.accountVerifiedAt).toLocaleDateString()
+                  : 'Pending',
+              },
+              {
+                label: 'Credential uploads',
+                value: `${licenseCount} license · ${malpracticeCount} malpractice`,
+              },
+              {
+                label: 'Training modules',
+                value: allTrainingDone
+                  ? `Completed ${draft.trainingCompletedAt ? new Date(draft.trainingCompletedAt).toLocaleDateString() : ''}`
+                  : `${completedModules}/${totalModules || 3} complete`,
+              },
             ].map((item) => (
               <View key={item.label} style={styles.summaryRow}>
                 <ThemedText variant="caption1" color="secondary">
