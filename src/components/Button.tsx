@@ -23,6 +23,8 @@ export interface ButtonProps extends PressableProps {
   rightIcon?: React.ReactNode;
   textVariant?: TextVariant;
   onPress?: (event: GestureResponderEvent) => void;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -36,6 +38,8 @@ const Button: React.FC<ButtonProps> = ({
   textVariant,
   disabled,
   style,
+  accessibilityLabel,
+  accessibilityHint,
   ...rest
 }) => {
   const isDisabled = disabled || loading;
@@ -55,6 +59,10 @@ const Button: React.FC<ButtonProps> = ({
         style,
       ]}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isDisabled }}
       {...rest}
     >
       <View style={styles.content}>

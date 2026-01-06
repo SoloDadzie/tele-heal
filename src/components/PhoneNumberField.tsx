@@ -50,6 +50,8 @@ export type PhoneNumberFieldProps = {
   onCountryChange?: (country: PhoneCountryOption) => void;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
 const PhoneNumberField: React.FC<PhoneNumberFieldProps> = ({
@@ -64,6 +66,8 @@ const PhoneNumberField: React.FC<PhoneNumberFieldProps> = ({
   onCountryChange,
   style,
   disabled = false,
+  accessibilityLabel,
+  accessibilityHint,
 }) => {
   const isControlled = Boolean(countryCode);
 
@@ -103,6 +107,9 @@ const PhoneNumberField: React.FC<PhoneNumberFieldProps> = ({
           onPress={() => !disabled && setIsModalVisible(true)}
           activeOpacity={0.85}
           disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="Select country"
+          accessibilityHint={`Current country: ${currentCountry.name}`}
         >
           <ThemedText variant="body3" color="primary">
             {currentCountry.flag}
@@ -112,6 +119,9 @@ const PhoneNumberField: React.FC<PhoneNumberFieldProps> = ({
           onPress={() => !disabled && setIsModalVisible(true)}
           activeOpacity={0.7}
           disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="Country dial code"
+          accessibilityHint={`Dial code: ${currentCountry.dialCode}`}
         >
           <ThemedText variant="body3" color="secondary" style={styles.dialCode}>
             {currentCountry.dialCode}
@@ -127,6 +137,8 @@ const PhoneNumberField: React.FC<PhoneNumberFieldProps> = ({
             editable={!disabled}
             error={error}
             helperText={helperText}
+            accessibilityLabel={accessibilityLabel || label}
+            accessibilityHint={accessibilityHint || helperText}
           />
         </View>
       </View>
@@ -150,6 +162,10 @@ const PhoneNumberField: React.FC<PhoneNumberFieldProps> = ({
                     ]}
                     onPress={() => handleSelectCountry(item)}
                     activeOpacity={0.85}
+                    accessibilityRole="radio"
+                    accessibilityLabel={item.name}
+                    accessibilityHint={`Dial code: ${item.dialCode}${item.code === currentCountry.code ? ', currently selected' : ''}`}
+                    accessibilityState={{ selected: item.code === currentCountry.code }}
                   >
                     <View style={styles.modalItemContent}>
                       <ThemedText variant="body2" color="primary">

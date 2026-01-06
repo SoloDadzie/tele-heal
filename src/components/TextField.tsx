@@ -18,6 +18,8 @@ export interface TextFieldProps extends TextInputProps {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   onPress?: () => void;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 const TextField: React.FC<TextFieldProps> = ({
@@ -29,6 +31,8 @@ const TextField: React.FC<TextFieldProps> = ({
   rightIcon,
   style,
   onPress,
+  accessibilityLabel,
+  accessibilityHint,
   ...rest
 }) => {
   const hasError = Boolean(error);
@@ -44,6 +48,9 @@ const TextField: React.FC<TextFieldProps> = ({
       <TextInput
         style={[styles.input, style]}
         placeholderTextColor={theme.colors.text.placeholder}
+        accessibilityLabel={accessibilityLabel || label}
+        accessibilityHint={accessibilityHint || helperText}
+        accessibilityRole="text"
         {...rest}
       />
       {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
