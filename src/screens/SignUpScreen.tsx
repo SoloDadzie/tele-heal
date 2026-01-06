@@ -7,8 +7,10 @@ import ThemedText from '../components/ThemedText';
 import TextField from '../components/TextField';
 import Button from '../components/Button';
 import ThemedCard from '../components/ThemedCard';
+import ErrorAlert from '../components/ErrorAlert';
 import PhoneNumberField from '../components/PhoneNumberField';
 import { theme } from '../theme';
+import { signUpSchema, validateForm } from '../utils/validation';
 
 const heroSteps: { id: string; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { id: 'verify', icon: 'shield-checkmark-outline', label: 'Secure identity' },
@@ -34,11 +36,45 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
   const [fullName, setFullName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
   const [phoneCountryCode, setPhoneCountryCode] = React.useState<string | undefined>('GH');
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
-  const isConfirmEnabled = fullName.trim().length > 0 && phone.trim().length > 0;
+  const isConfirmEnabled = fullName.trim().length > 0 && phone.trim().length > 0 && password.trim().length > 0 && confirmPassword.trim().length > 0;
 
   const anim = React.useRef(new Animated.Value(0)).current;
+
+  const handleSignUp = async () => {
+    setError(null);
+    setFieldErrors({});
+
+    const validation = validateForm(signUpSchema, { phone, password, confirmPassword });
+
+    if (!validation.valid) {
+      setFieldErrors(validation.errors);
+      setError({
+        title: 'Validation Error',
+        message: 'Please check your input and try again.',
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      onVerified?.();
+    } catch (err) {
+      setError({
+        title: 'Sign Up Failed',
+        message: 'Failed to create account. Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   React.useEffect(() => {
     Animated.timing(anim, {
@@ -103,7 +139,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
               Start your care plan
             </ThemedText>
             <ThemedText variant="body2" color="inverse" style={styles.heroSubtitle}>
-              Tell us who you are and we’ll connect you to the right doctors, services, and support team.
+              Tell us who you are and we'll connect you to the right doctors, services, and support team.
             </ThemedText>
 
             <View style={styles.heroStepsRow}>
@@ -119,6 +155,16 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
               ))}
             </View>
           </LinearGradient>
+
+          {error && (
+            <ErrorAlert
+              title={error.title}
+              message={error.message}
+              onDismiss={() => setError(null)}
+              onRetry={handleSignUp}
+              visible={!!error}
+            />
+          )}
 
           <ThemedCard style={styles.formCard}>
             <View style={styles.formHeader}>
@@ -158,16 +204,50 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
                 countryCode={phoneCountryCode}
                 onCountryChange={(country) => setPhoneCountryCode(country.code)}
               />
+              {fieldErrors.phone && (
+                <ThemedText variant="caption1" style={[styles.fieldError, { color: theme.colors.semantic.danger }]}>
+                  {fieldErrors.phone}
+                </ThemedText>
+              )}
             </View>
+
+            <TextField
+              label="Password"
+              placeholder="Enter password"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              containerProps={{ style: styles.fieldSpacing }}
+            />
+            {fieldErrors.password && (
+              <ThemedText variant="caption1" style={[styles.fieldError, { color: theme.colors.semantic.danger }]}>
+                {fieldErrors.password}
+              </ThemedText>
+            )}
+
+            <TextField
+              label="Confirm password"
+              placeholder="Confirm password"
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              containerProps={{ style: styles.fieldSpacing }}
+            />
+            {fieldErrors.confirmPassword && (
+              <ThemedText variant="caption1" style={[styles.fieldError, { color: theme.colors.semantic.danger }]}>
+                {fieldErrors.confirmPassword}
+              </ThemedText>
+            )}
 
             <View style={styles.confirmButtonWrapper}>
               <Button
-                label="Confirm"
+                label="Create Account"
                 variant="primary"
                 fullWidth
                 style={!isConfirmEnabled ? styles.confirmButton : undefined}
-                disabled={!isConfirmEnabled}
-                onPress={onVerified}
+                disabled={!isConfirmEnabled || isLoading}
+                loading={isLoading}
+                onPress={handleSignUp}
               />
             </View>
 
@@ -346,6 +426,10 @@ const styles = StyleSheet.create({
   fieldLabel: {
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+  },
+  fieldError: {
+    marginTop: theme.spacing.xs,
+    marginLeft: theme.spacing.xs,
   },
   fieldSpacing: {
     marginBottom: theme.spacing.md,
