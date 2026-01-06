@@ -1,12 +1,15 @@
 import React from 'react';
-import { Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ThemedText from '../components/ThemedText';
 import ThemedCard from '../components/ThemedCard';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
 import type { Appointment } from './ScheduleScreen';
+import { useAuth } from '../contexts/AuthContext';
+import { getVideoToken, startConsultation, endConsultation, addConsultationNotes } from '../services/video';
 
 export type ConsultWorkspaceState = {
   appointmentId: string;
@@ -40,6 +43,7 @@ const VirtualConsultationScreen: React.FC<VirtualConsultationScreenProps> = ({
   workspaceState,
   onWorkspaceStateChange,
 }) => {
+  const { user } = useAuth();
   const [isMuted, setIsMuted] = React.useState(workspaceState?.isMuted ?? false);
   const [isVideoOff, setIsVideoOff] = React.useState(workspaceState?.isVideoOff ?? false);
   const [isChatOpen, setIsChatOpen] = React.useState(true);
@@ -51,7 +55,57 @@ const VirtualConsultationScreen: React.FC<VirtualConsultationScreenProps> = ({
     ]
   );
   const [noteDraft, setNoteDraft] = React.useState('');
+  const [isInitializing, setIsInitializing] = React.useState(false);
+  const [isEnding, setIsEnding] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [videoToken, setVideoToken] = React.useState<string | null>(null);
+  const [isConsultationStarted, setIsConsultationStarted] = React.useState(false);
 
+  // Initialize consultation on mount
+  React.useEffect(() => {
+    const initializeConsultation = async () => {
+      if (!user?.id || isConsultationStarted) return;
+
+      try {
+        setIsInitializing(true);
+
+        // Get video token
+        const tokenResult = await getVideoToken(appointment.id, user.id, user.full_name || 'Patient');
+        if (!tokenResult.success) {
+          setError({
+            title: 'Video Setup Failed',
+            message: tokenResult.error || 'Failed to initialize video call.',
+          });
+          return;
+        }
+
+        setVideoToken(tokenResult.data?.token || null);
+
+        // Start consultation
+        const startResult = await startConsultation(appointment.id);
+        if (!startResult.success) {
+          setError({
+            title: 'Consultation Start Failed',
+            message: startResult.error || 'Failed to start consultation.',
+          });
+          return;
+        }
+
+        setIsConsultationStarted(true);
+      } catch (err: any) {
+        setError({
+          title: 'Initialization Error',
+          message: err.message || 'Failed to initialize consultation.',
+        });
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    initializeConsultation();
+  }, [user?.id, appointment.id, isConsultationStarted]);
+
+  // Update workspace state
   React.useEffect(() => {
     const timer = setTimeout(() => {
       onWorkspaceStateChange?.({
@@ -67,14 +121,68 @@ const VirtualConsultationScreen: React.FC<VirtualConsultationScreenProps> = ({
     return () => clearTimeout(timer);
   }, [notes, isMuted, isVideoOff, isSharingScreen, appointment.id, onWorkspaceStateChange]);
 
+  // Handle end consultation
+  const handleEndConsultation = async () => {
+    Alert.alert(
+      'End Consultation',
+      'Are you sure you want to end this consultation?',
+      [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'End',
+          onPress: async () => {
+            try {
+              setIsEnding(true);
+
+              // Add final notes
+              if (noteDraft.trim()) {
+                await addConsultationNotes(appointment.id, noteDraft);
+              }
+
+              // End consultation
+              const result = await endConsultation(appointment.id, notes.join('\n'));
+              if (!result.success) {
+                setError({
+                  title: 'End Failed',
+                  message: result.error || 'Failed to end consultation.',
+                });
+                return;
+              }
+
+              onEndConsultation();
+            } catch (err: any) {
+              setError({
+                title: 'Error',
+                message: err.message || 'Failed to end consultation.',
+              });
+            } finally {
+              setIsEnding(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
+        {error && (
+          <ErrorAlert
+            title={error.title}
+            message={error.message}
+            onDismiss={() => setError(null)}
+            onRetry={() => setError(null)}
+            visible={!!error}
+          />
+        )}
+
         <View style={styles.topBar}>
           <TouchableOpacity
             style={styles.topBarButton}
             activeOpacity={0.85}
-            onPress={onBack ?? onEndConsultation}
+            onPress={onBack ?? handleEndConsultation}
           >
             <Ionicons name="arrow-back" size={18} color={theme.colors.primary.main} />
           </TouchableOpacity>
