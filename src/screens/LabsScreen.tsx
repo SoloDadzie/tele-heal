@@ -5,7 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import ThemedText from '../components/ThemedText';
 import ThemedCard from '../components/ThemedCard';
+import Button from '../components/Button';
+import ErrorAlert from '../components/ErrorAlert';
 import { theme } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
+import { uploadLabResult } from '../services/storage';
 
 export type LabRequest = {
   id: string;
@@ -32,31 +36,102 @@ type LabsScreenProps = {
 };
 
 const LabsScreen: React.FC<LabsScreenProps> = ({ onBack, labRequests, uploadedResults, onUploadResult }) => {
+  const { user } = useAuth();
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [error, setError] = React.useState<{ title: string; message: string } | null>(null);
+  const [loadedResults, setLoadedResults] = React.useState<LabUpload[]>(uploadedResults);
+
   const pickDocument = async () => {
+    if (!user?.id) {
+      setError({
+        title: 'Upload Failed',
+        message: 'User not authenticated. Please sign in again.',
+      });
+      return;
+    }
+
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Allow TeleHeal to access your library to upload results.');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsMultipleSelection: false,
-      quality: 0.8,
-    });
+    try {
+      setIsUploading(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: false,
+        quality: 0.8,
+      });
 
-    if (result.canceled) return;
-    const asset = result.assets?.[0];
-    if (!asset?.uri) return;
+      if (result.canceled) {
+        setIsUploading(false);
+        return;
+      }
 
-    onUploadResult({
-      uri: asset.uri,
-      name: asset.fileName ?? 'Lab result',
-    });
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        setError({
+          title: 'Upload Failed',
+          message: 'Unable to read selected file.',
+        });
+        setIsUploading(false);
+        return;
+      }
+
+      // Upload lab result to Supabase Storage
+      const uploadResult = await uploadLabResult(user.id, {
+        uri: asset.uri,
+        name: asset.fileName || 'lab-result.jpg',
+        type: asset.type || 'image/jpeg',
+      });
+
+      if (!uploadResult.success) {
+        setError({
+          title: 'Upload Failed',
+          message: uploadResult.error || 'Failed to upload lab result.',
+        });
+        setIsUploading(false);
+        return;
+      }
+
+      // Add new result to list
+      const newResult: LabUpload = {
+        id: uploadResult.data?.id || `lab-${Date.now()}`,
+        name: asset.fileName || 'Lab result',
+        submittedAt: new Date().toLocaleDateString(),
+        uri: asset.uri,
+        status: 'pendingReview',
+      };
+
+      setLoadedResults((prev) => [newResult, ...prev]);
+      onUploadResult({
+        uri: asset.uri,
+        name: asset.fileName ?? 'Lab result',
+      });
+      Alert.alert('Success', 'Lab result uploaded successfully.');
+    } catch (err: any) {
+      setError({
+        title: 'Upload Error',
+        message: err.message || 'Failed to upload lab result.',
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
+        {error && (
+          <ErrorAlert
+            title={error.title}
+            message={error.message}
+            onDismiss={() => setError(null)}
+            onRetry={() => setError(null)}
+            visible={!!error}
+          />
+        )}
+
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.topBarButton} onPress={onBack} activeOpacity={0.85}>
             <Ionicons name='arrow-back' size={20} color={theme.colors.primary.main} />
@@ -64,7 +139,9 @@ const LabsScreen: React.FC<LabsScreenProps> = ({ onBack, labRequests, uploadedRe
           <ThemedText variant='headline2' color='primary'>
             Labs & scans
           </ThemedText>
-          <View style={{ width: 44 }} />
+          <TouchableOpacity style={styles.topBarButton} onPress={pickDocument} activeOpacity={0.85} disabled={isUploading}>
+            <Ionicons name='cloud-upload-outline' size={20} color={theme.colors.primary.main} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -154,7 +231,7 @@ const LabsScreen: React.FC<LabsScreenProps> = ({ onBack, labRequests, uploadedRe
                 Results you shared
               </ThemedText>
             </View>
-            {uploadedResults.length === 0 ? (
+            {loadedResults.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name='folder-outline' size={20} color={theme.colors.primary.main} />
                 <ThemedText variant='body3' color='secondary'>
@@ -162,7 +239,7 @@ const LabsScreen: React.FC<LabsScreenProps> = ({ onBack, labRequests, uploadedRe
                 </ThemedText>
               </View>
             ) : (
-              uploadedResults.map((upload) => (
+              loadedResults.map((upload) => (
                 <View key={upload.id} style={styles.uploadRow}>
                   <View style={{ flex: 1 }}>
                     <ThemedText variant='body2' color='primary'>
