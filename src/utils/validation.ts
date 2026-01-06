@@ -1,12 +1,11 @@
 import { z } from 'zod';
 
 /**
- * Email validation schema
+ * Validates email addresses using RFC 5322 standard format
+ * @example
+ * emailSchema.safeParse('user@example.com') // { success: true, data: 'user@example.com' }
  */
-export const emailSchema = z
-  .string()
-  .email('Invalid email address')
-  .min(1, 'Email is required');
+const emailSchema = z.string().email('Invalid email address').min(1, 'Email is required');
 
 /**
  * Phone number validation schema
@@ -163,7 +162,16 @@ export const profileSetupSchema = z.object({
 export type ProfileSetupFormData = z.infer<typeof profileSetupSchema>;
 
 /**
- * Validate form data and return errors
+ * Validates form data against a Zod schema and returns validation results
+ * @template T - The type of data being validated
+ * @param schema - Zod schema to validate against
+ * @param data - Form data to validate
+ * @returns Object with valid flag and error messages by field
+ * @example
+ * const result = validateForm(loginSchema, { phone: '0501234567', password: 'Pass123!' });
+ * if (!result.valid) {
+ *   console.log(result.errors); // { phone: 'Invalid phone number' }
+ * }
  */
 export const validateForm = <T>(schema: z.ZodSchema, data: T): { valid: boolean; errors: Record<string, string> } => {
   try {
@@ -183,7 +191,15 @@ export const validateForm = <T>(schema: z.ZodSchema, data: T): { valid: boolean;
 };
 
 /**
- * Validate a single field
+ * Validates a single field value against a Zod schema
+ * @param schema - Zod schema to validate against
+ * @param value - Field value to validate
+ * @returns Error message if invalid, null if valid
+ * @example
+ * const error = validateField(emailSchema, 'invalid-email');
+ * if (error) {
+ *   console.log(error); // 'Invalid email address'
+ * }
  */
 export const validateField = (schema: z.ZodSchema, value: unknown): string | null => {
   try {
