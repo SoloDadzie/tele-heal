@@ -313,6 +313,16 @@ const ProviderConsultWorkspaceScreen: React.FC<ProviderConsultWorkspaceScreenPro
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {error && (
+        <ErrorAlert
+          title={error.title}
+          message={error.message}
+          onDismiss={() => setError(null)}
+          onRetry={() => setError(null)}
+          visible={!!error}
+        />
+      )}
+
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.navButton} onPress={onBack} activeOpacity={0.85}>
           <Ionicons name="arrow-back" size={18} color={theme.colors.primary.main} />
