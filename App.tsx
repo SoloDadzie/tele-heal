@@ -53,6 +53,16 @@ import Button from './src/components/Button';
 import ThemedText from './src/components/ThemedText';
 import { theme } from './src/theme';
 import { formatCurrency } from './src/utils/currency';
+import {
+  MOCK_DOCTORS,
+  MOCK_PATIENT_PROFILE,
+  MOCK_APPOINTMENTS,
+  MOCK_PRESCRIPTIONS,
+  MOCK_LAB_REQUESTS,
+  MOCK_LAB_UPLOADS,
+  MOCK_DOCUMENTS,
+  MOCK_PROVIDER_PATIENTS,
+} from './src/data/mockData';
 
 type Route =
   | 'onboarding'
@@ -308,34 +318,7 @@ export default function App() {
   const [providerDraft, setProviderDraft] = React.useState<ProviderProfileDraft | null>(null);
   const [providerConsultContext, setProviderConsultContext] = React.useState<ProviderConsultContext | null>(null);
   const [providerCallSession, setProviderCallSession] = React.useState<ProviderCallSession | null>(null);
-  const [appointments, setAppointments] = React.useState<Appointment[]>([
-    {
-      id: 'appt-1',
-      code: '#0012345678',
-      serviceLabel: 'Blood test package',
-      total: formatCurrency(1200),
-      amountValue: 1200,
-      currency: 'GHS',
-      status: 'pendingPayment' as const,
-      doctorName: 'Dr. Sarah Johnson',
-      dateLabel: 'Today',
-      timeLabel: '09:00 AM',
-      group: 'today' as const,
-    },
-    {
-      id: 'appt-2',
-      code: '#0012345679',
-      serviceLabel: 'Dental check-up',
-      total: formatCurrency(850),
-      amountValue: 850,
-      currency: 'GHS',
-      status: 'paid' as const,
-      doctorName: 'Dr. Mark Lee',
-      dateLabel: 'Friday, 15 Dec',
-      timeLabel: '02:30 PM',
-      group: 'upcoming' as const,
-    },
-  ]);
+  const [appointments, setAppointments] = React.useState<Appointment[]>(MOCK_APPOINTMENTS);
 
   const [notifications, setNotifications] = React.useState<NotificationItem[]>([
     {
@@ -448,82 +431,10 @@ export default function App() {
   const handleOrderLab = React.useCallback((note: string) => {
     appendProviderOrder('lab', note);
   }, [appendProviderOrder]);
-  const [documents] = React.useState<DocumentRecord[]>([
-    {
-      id: 'doc-1',
-      title: 'Visit Summary · Aug 28',
-      subtitle: 'Dr. Sarah Johnson • PDF · 2 MB',
-      date: '2d ago',
-      summary:
-        'Overview of your visit discussing dizziness, hydration improvements, and the monitoring plan for blood pressure.',
-      author: 'Dr. Sarah Johnson',
-      downloadUrl: 'https://example.com/docs/doc-1.pdf',
-    },
-    {
-      id: 'doc-2',
-      title: 'Lab results · Basic panel',
-      subtitle: 'Quest Diagnostics • PDF · 640 KB',
-      date: '1w ago',
-      summary: 'CBC and electrolyte panel completed. No abnormalities detected.',
-      author: 'Quest Diagnostics',
-      downloadUrl: 'https://example.com/docs/doc-2.pdf',
-    },
-  ]);
-  const [prescriptions, setPrescriptions] = React.useState<PrescriptionItem[]>([
-    {
-      id: 'rx-1',
-      name: 'Meclizine 25mg',
-      dosage: '1 tablet',
-      instructions: 'Take every 8 hours as needed for dizziness.',
-      issuedBy: 'Dr. Sarah Johnson',
-      issuedOn: 'Aug 28, 2025',
-      refillsRemaining: 2,
-    },
-    {
-      id: 'rx-2',
-      name: 'Vitamin D 1000 IU',
-      dosage: '1 capsule',
-      instructions: 'Take once daily with food.',
-      issuedBy: 'Dr. Sarah Johnson',
-      issuedOn: 'Aug 28, 2025',
-      refillsRemaining: 5,
-    },
-  ]);
-  const [labRequests, setLabRequests] = React.useState<LabRequest[]>([
-    {
-      id: 'lab-1',
-      name: 'Complete blood count (CBC)',
-      orderingDoctor: 'Dr. Sarah Johnson',
-      orderedOn: 'Aug 29, 2025',
-      status: 'processing',
-      instructions: 'Visit any partner lab this week.',
-    },
-    {
-      id: 'lab-2',
-      name: 'Electrolyte panel',
-      orderingDoctor: 'Dr. Sarah Johnson',
-      orderedOn: 'Aug 29, 2025',
-      status: 'ready',
-      instructions: 'Results available to review.',
-    },
-    {
-      id: 'lab-3',
-      name: 'Head CT',
-      orderingDoctor: 'Dr. Mark Lee',
-      orderedOn: 'Aug 30, 2025',
-      status: 'scheduled',
-      instructions: 'Scheduled for Sep 2 · 9:00 AM.',
-    },
-  ]);
-  const [labUploads, setLabUploads] = React.useState<LabUpload[]>([
-    {
-      id: 'upload-1',
-      name: 'CBC results.pdf',
-      submittedAt: 'Aug 31, 2025',
-      uri: '',
-      status: 'reviewed',
-    },
-  ]);
+  const [documents] = React.useState<DocumentRecord[]>(MOCK_DOCUMENTS);
+  const [prescriptions, setPrescriptions] = React.useState<PrescriptionItem[]>(MOCK_PRESCRIPTIONS);
+  const [labRequests, setLabRequests] = React.useState<LabRequest[]>(MOCK_LAB_REQUESTS);
+  const [labUploads, setLabUploads] = React.useState<LabUpload[]>(MOCK_LAB_UPLOADS);
 
   const [paymentIntent, setPaymentIntent] = React.useState<PaymentIntent | null>(null);
 
