@@ -329,9 +329,37 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
       // Save insurance info if provided
       if (values.insuranceProvider.trim() || values.insuranceMemberId.trim()) {
+        // Upload insurance card images if provided
+        let insuranceFrontUrl: string | undefined;
+        let insuranceBackUrl: string | undefined;
+
+        if (values.insuranceFrontUri) {
+          const frontResult = await uploadInsuranceCard(user.id, {
+            uri: values.insuranceFrontUri,
+            name: 'insurance-front.jpg',
+            type: 'image/jpeg',
+          });
+          if (frontResult.success) {
+            insuranceFrontUrl = frontResult.data?.url;
+          }
+        }
+
+        if (values.insuranceBackUri) {
+          const backResult = await uploadInsuranceCard(user.id, {
+            uri: values.insuranceBackUri,
+            name: 'insurance-back.jpg',
+            type: 'image/jpeg',
+          });
+          if (backResult.success) {
+            insuranceBackUrl = backResult.data?.url;
+          }
+        }
+
         await upsertInsuranceInfo(user.id, {
           providerName: values.insuranceProvider,
           memberId: values.insuranceMemberId,
+          cardFrontUrl: insuranceFrontUrl,
+          cardBackUrl: insuranceBackUrl,
         });
       }
 
