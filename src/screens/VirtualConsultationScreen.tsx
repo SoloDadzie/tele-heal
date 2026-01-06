@@ -8,10 +8,22 @@ import ThemedCard from '../components/ThemedCard';
 import { theme } from '../theme';
 import type { Appointment } from './ScheduleScreen';
 
+export type ConsultWorkspaceState = {
+  appointmentId: string;
+  notes: string[];
+  messages: Array<{ id: string; author: string; text: string }>;
+  isMuted: boolean;
+  isVideoOff: boolean;
+  isSharingScreen: boolean;
+  lastUpdated: string;
+};
+
 export type VirtualConsultationScreenProps = {
   appointment: Appointment;
   onEndConsultation: () => void;
   onBack?: () => void;
+  workspaceState?: ConsultWorkspaceState;
+  onWorkspaceStateChange?: (state: ConsultWorkspaceState) => void;
 };
 
 const MOCK_MESSAGES = [
@@ -25,16 +37,32 @@ const VirtualConsultationScreen: React.FC<VirtualConsultationScreenProps> = ({
   appointment,
   onEndConsultation,
   onBack,
+  workspaceState,
+  onWorkspaceStateChange,
 }) => {
-  const [isMuted, setIsMuted] = React.useState(false);
-  const [isVideoOff, setIsVideoOff] = React.useState(false);
+  const [isMuted, setIsMuted] = React.useState(workspaceState?.isMuted ?? false);
+  const [isVideoOff, setIsVideoOff] = React.useState(workspaceState?.isVideoOff ?? false);
   const [isChatOpen, setIsChatOpen] = React.useState(true);
-  const [isSharingScreen, setIsSharingScreen] = React.useState(false);
-  const [notes, setNotes] = React.useState<string[]>([
-    'Vitals normal. Needs follow-up labs.',
-    'Remind to log dizziness episodes daily.',
-  ]);
+  const [isSharingScreen, setIsSharingScreen] = React.useState(workspaceState?.isSharingScreen ?? false);
+  const [notes, setNotes] = React.useState<string[]>(
+    workspaceState?.notes ?? [
+      'Vitals normal. Needs follow-up labs.',
+      'Remind to log dizziness episodes daily.',
+    ]
+  );
   const [noteDraft, setNoteDraft] = React.useState('');
+
+  React.useEffect(() => {
+    onWorkspaceStateChange?.({
+      appointmentId: appointment.id,
+      notes,
+      messages: MOCK_MESSAGES,
+      isMuted,
+      isVideoOff,
+      isSharingScreen,
+      lastUpdated: new Date().toISOString(),
+    });
+  }, [notes, isMuted, isVideoOff, isSharingScreen, appointment.id, onWorkspaceStateChange]);
 
   return (
     <SafeAreaView style={styles.safeArea}>

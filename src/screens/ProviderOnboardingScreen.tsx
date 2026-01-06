@@ -1,7 +1,8 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import ThemedCard from '../components/ThemedCard';
 import ThemedText from '../components/ThemedText';
 import TextField from '../components/TextField';
@@ -10,6 +11,14 @@ import { theme } from '../theme';
 import type { ProviderInviteContext } from './ProviderInviteScreen';
 
 export type ConsultationMode = 'virtual' | 'inPerson' | 'hybrid';
+
+type ProviderAttachment = {
+  id: string;
+  uri: string;
+  displayName: string;
+  source: 'camera' | 'library';
+  addedAt: string;
+};
 
 export type ProviderProfileDraft = {
   fullName: string;
@@ -28,8 +37,8 @@ export type ProviderProfileDraft = {
   availabilitySlots: Record<string, string[]>;
   feeCurrency: string;
   trainingAcknowledged: boolean;
-  licenseDocuments: string[];
-  malpracticeDocuments: string[];
+  licenseDocuments: ProviderAttachment[];
+  malpracticeDocuments: ProviderAttachment[];
   verificationNotes: string;
   trainingModules: Record<string, boolean>;
   trainingCompletedAt?: string;
@@ -139,18 +148,79 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
     });
   };
 
-  const addMockAttachment = (type: 'license' | 'malpractice') => {
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const fileLabel = type === 'license' ? `License-${prevRandomId()}` : `Malpractice-${prevRandomId()}`;
+  const handleAttachmentsPermission = async (source: 'camera' | 'library') => {
+    if (source === 'camera') {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      return permission.status === 'granted';
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    return permission.status === 'granted';
+  };
+
+  const handleAddAttachment = async (type: 'license' | 'malpractice', source: 'camera' | 'library') => {
+    const granted = await handleAttachmentsPermission(source);
+    if (!granted) {
+      Alert.alert(
+        'Permission needed',
+        source === 'camera'
+          ? 'Enable camera access to capture a document.'
+          : 'Enable photo library access to pick an existing file.',
+      );
+      return;
+    }
+
+    const picker =
+      source === 'camera' ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+
+    const result = await picker({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: source === 'camera',
+      base64: false,
+      quality: 0.85,
+    });
+
+    if (result.canceled) return;
+
+    const assets = (result.assets ?? []).filter(Boolean);
+    if (!assets.length) return;
+
+    setDraft((prev) => {
+      const attachments = assets.map((asset, index) => ({
+        id: `${type}-${Date.now()}-${index}`,
+        uri: asset.uri ?? '',
+        displayName: asset.fileName ?? `${type === 'license' ? 'License' : 'Malpractice'}-${prevRandomId()}.jpg`,
+        source,
+        addedAt: new Date().toLocaleString(),
+      }));
+
+      const next = {
+        ...prev,
+        licenseDocuments:
+          type === 'license' ? [...prev.licenseDocuments, ...attachments] : prev.licenseDocuments,
+        malpracticeDocuments:
+          type === 'malpractice'
+            ? [...prev.malpracticeDocuments, ...attachments]
+            : prev.malpracticeDocuments,
+        verificationNotes:
+          type === 'license'
+            ? `Last uploaded ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : prev.verificationNotes || `Uploaded ${new Date().toLocaleDateString()} · pending credentialing`,
+      };
+      return next;
+    });
+  };
+
+  const handleRemoveAttachment = (type: 'license' | 'malpractice', attachmentId: string) => {
     setDraft((prev) => ({
       ...prev,
-      licenseDocuments: type === 'license' ? [...prev.licenseDocuments, `${fileLabel}.pdf`] : prev.licenseDocuments,
-      malpracticeDocuments:
-        type === 'malpractice' ? [...prev.malpracticeDocuments, `${fileLabel}.pdf`] : prev.malpracticeDocuments,
-      verificationNotes:
+      licenseDocuments:
         type === 'license'
-          ? `Last uploaded at ${timestamp}`
-          : prev.verificationNotes || `Uploaded ${timestamp}, pending credentialing.`,
+          ? prev.licenseDocuments.filter((doc) => doc.id !== attachmentId)
+          : prev.licenseDocuments,
+      malpracticeDocuments:
+        type === 'malpractice'
+          ? prev.malpracticeDocuments.filter((doc) => doc.id !== attachmentId)
+          : prev.malpracticeDocuments,
     }));
   };
 
@@ -260,25 +330,57 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
             <ThemedText variant="caption1" color="secondary">
               Add at least one photo or PDF of your active license. These are stored securely for credentialing review.
             </ThemedText>
+            <View style={styles.attachmentActions}>
+              <TouchableOpacity
+                style={styles.attachmentActionButton}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('license', 'library')}
+              >
+                <Ionicons name="images-outline" size={16} color={theme.colors.primary.main} />
+                <ThemedText variant="caption1" color="primary">
+                  Photo library
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.attachmentActionButton}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('license', 'camera')}
+              >
+                <Ionicons name="camera-outline" size={16} color={theme.colors.primary.main} />
+                <ThemedText variant="caption1" color="primary">
+                  Use camera
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
             <View style={styles.attachmentList}>
-              {draft.licenseDocuments.length === 0 && (
+              {draft.licenseDocuments.length === 0 ? (
                 <ThemedText variant="caption1" color="secondary">
                   No documents attached yet.
                 </ThemedText>
+              ) : (
+                draft.licenseDocuments.map((doc) => (
+                  <View key={doc.id} style={styles.attachmentRow}>
+                    <View style={styles.attachmentIcon}>
+                      <Ionicons name="document-text-outline" size={16} color={theme.colors.primary.main} />
+                    </View>
+                    <View style={styles.attachmentMeta}>
+                      <ThemedText variant="body3" color="primary" numberOfLines={1}>
+                        {doc.displayName}
+                      </ThemedText>
+                      <ThemedText variant="caption2" color="secondary">
+                        {doc.source === 'camera' ? 'Captured' : 'Imported'} · {doc.addedAt}
+                      </ThemedText>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.attachmentRemoveButton}
+                      onPress={() => handleRemoveAttachment('license', doc.id)}
+                    >
+                      <Ionicons name="trash-outline" size={14} color={theme.colors.semantic.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))
               )}
-              {draft.licenseDocuments.map((doc) => (
-                <View key={doc} style={styles.attachmentRow}>
-                  <Ionicons name="document-text-outline" size={16} color={theme.colors.primary.main} />
-                  <ThemedText variant="body3" color="primary">
-                    {doc}
-                  </ThemedText>
-                  <ThemedText variant="caption1" color="secondary">
-                    Pending review
-                  </ThemedText>
-                </View>
-              ))}
             </View>
-            <Button label="Attach license file" variant="secondary" size="sm" onPress={() => addMockAttachment('license')} />
             <View style={styles.fieldSpacing} />
             <ThemedText variant="body2" color="primary">
               Malpractice coverage
@@ -286,25 +388,57 @@ const ProviderOnboardingScreen: React.FC<ProviderOnboardingScreenProps> = ({
             <ThemedText variant="caption1" color="secondary">
               Upload your current policy or COI to speed up approval.
             </ThemedText>
+            <View style={styles.attachmentActions}>
+              <TouchableOpacity
+                style={styles.attachmentActionButton}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('malpractice', 'library')}
+              >
+                <Ionicons name="images-outline" size={16} color={theme.colors.primary.main} />
+                <ThemedText variant="caption1" color="primary">
+                  Photo library
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.attachmentActionButton}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('malpractice', 'camera')}
+              >
+                <Ionicons name="camera-outline" size={16} color={theme.colors.primary.main} />
+                <ThemedText variant="caption1" color="primary">
+                  Use camera
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
             <View style={styles.attachmentList}>
-              {draft.malpracticeDocuments.length === 0 && (
+              {draft.malpracticeDocuments.length === 0 ? (
                 <ThemedText variant="caption1" color="secondary">
                   No documents attached yet.
                 </ThemedText>
+              ) : (
+                draft.malpracticeDocuments.map((doc) => (
+                  <View key={doc.id} style={styles.attachmentRow}>
+                    <View style={styles.attachmentIcon}>
+                      <Ionicons name="shield-checkmark-outline" size={16} color={theme.colors.primary.main} />
+                    </View>
+                    <View style={styles.attachmentMeta}>
+                      <ThemedText variant="body3" color="primary" numberOfLines={1}>
+                        {doc.displayName}
+                      </ThemedText>
+                      <ThemedText variant="caption2" color="secondary">
+                        {doc.source === 'camera' ? 'Captured' : 'Imported'} · {doc.addedAt}
+                      </ThemedText>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.attachmentRemoveButton}
+                      onPress={() => handleRemoveAttachment('malpractice', doc.id)}
+                    >
+                      <Ionicons name="trash-outline" size={14} color={theme.colors.semantic.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))
               )}
-              {draft.malpracticeDocuments.map((doc) => (
-                <View key={doc} style={styles.attachmentRow}>
-                  <Ionicons name="shield-checkmark-outline" size={16} color={theme.colors.primary.main} />
-                  <ThemedText variant="body3" color="primary">
-                    {doc}
-                  </ThemedText>
-                  <ThemedText variant="caption1" color="secondary">
-                    Pending review
-                  </ThemedText>
-                </View>
-              ))}
             </View>
-            <Button label="Attach malpractice proof" variant="secondary" size="sm" onPress={() => addMockAttachment('malpractice')} />
             {draft.verificationNotes ? (
               <ThemedText variant="caption1" color="secondary">
                 {draft.verificationNotes}
@@ -715,6 +849,24 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primary.main,
     backgroundColor: theme.colors.primary.light,
   },
+  attachmentActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    flexWrap: 'wrap',
+  },
+  attachmentActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm / 1.2,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    backgroundColor: theme.colors.background.card,
+    ...theme.shadows.sm,
+  },
   attachmentList: {
     gap: theme.spacing.xs,
     marginTop: theme.spacing.xs,
@@ -726,6 +878,25 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.border.light,
+  },
+  attachmentIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentMeta: {
+    flex: 1,
+  },
+  attachmentRemoveButton: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.background.muted,
   },
   trainingList: {
     gap: theme.spacing.sm,

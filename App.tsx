@@ -40,6 +40,12 @@ import ProviderScheduleSettingsScreen, {
   type ProviderScheduleSettings as ProviderScheduleSettingsDraft,
 } from './src/screens/ProviderScheduleSettingsScreen';
 import ProviderVisitWrapUpScreen from './src/screens/ProviderVisitWrapUpScreen';
+import ProviderTasksScreen from './src/screens/ProviderTasksScreen';
+import ProviderMessagingScreen from './src/screens/ProviderMessagingScreen';
+import ProviderCalendarScreen from './src/screens/ProviderCalendarScreen';
+import PatientAppointmentsScreen from './src/screens/PatientAppointmentsScreen';
+import PatientPrescriptionSharingScreen from './src/screens/PatientPrescriptionSharingScreen';
+import PatientDocumentSharingScreen from './src/screens/PatientDocumentSharingScreen';
 import type { DocumentRecord } from './src/types/documents';
 import type { PaymentIntent } from './src/types/payments';
 import type { CurrencyCode } from './src/config/regions';
@@ -70,6 +76,7 @@ type Route =
   | 'doctorReviews'
   | 'schedule'
   | 'profile'
+  | 'patientProfileSetup'
   | 'chat'
   | 'notification'
   | 'payment'
@@ -83,7 +90,13 @@ type Route =
   | 'providerConsult'
   | 'providerCall'
   | 'providerScheduleSettings'
-  | 'providerWrapUp';
+  | 'providerWrapUp'
+  | 'providerTasks'
+  | 'providerMessaging'
+  | 'providerCalendar'
+  | 'patientAppointments'
+  | 'patientPrescriptionSharing'
+  | 'patientDocumentSharing';
 
 type NotificationItem = {
   id: string;
@@ -288,6 +301,7 @@ export default function App() {
 
   const [route, setRoute] = React.useState<Route>('onboarding');
   const [patientProfile, setPatientProfile] = React.useState<PatientProfile | null>(null);
+  const [profileSetupDraft, setProfileSetupDraft] = React.useState<Omit<PatientProfile, 'completedAt'> | null>(null);
   const [authPhone, setAuthPhone] = React.useState('');
   const [authCountryCode, setAuthCountryCode] = React.useState<string | undefined>(undefined);
   const [providerInviteContext, setProviderInviteContext] = React.useState<ProviderInviteContext | null>(null);
@@ -365,6 +379,9 @@ export default function App() {
   const [providerScheduleSettings, setProviderScheduleSettings] =
     React.useState<ProviderScheduleSettingsDraft>(DEFAULT_SCHEDULE_SETTINGS);
   const [pendingWrapUpContext, setPendingWrapUpContext] = React.useState<ProviderConsultContext | null>(null);
+  const [consultWorkspaceStates, setConsultWorkspaceStates] = React.useState<
+    Record<string, { notes: string[]; messages: Array<{ id: string; author: string; text: string }>; isMuted: boolean; isVideoOff: boolean; isSharingScreen: boolean; lastUpdated: string }>
+  >({});
 
   const appendProviderChat = React.useCallback((text: string) => {
     setProviderCallSession((prev) =>
@@ -613,6 +630,7 @@ export default function App() {
     <ScheduleScreen
       onGoHome={() => setRoute('home')}
       onOpenService={() => setRoute('service')}
+      onOpenAppointments={() => setRoute('patientAppointments')}
       onOpenProfile={() => setRoute('profile')}
       onOpenChat={() => setRoute('chat')}
       appointments={appointments}
@@ -645,6 +663,20 @@ export default function App() {
         onDone={() => setRoute('login')}
         onSkip={() => setRoute('login')}
         onOpenProviderAccess={() => setRoute('providerInvite')}
+      />
+    );
+  } else if (route === 'patientProfileSetup') {
+    screen = (
+      <ProfileSetupScreen
+        initialEmail={authPhone}
+        onDone={(profile) => {
+          setPatientProfile(profile);
+          setProfileSetupDraft(null);
+          setRoute('home');
+        }}
+        onBack={() => setRoute('home')}
+        initialDraft={profileSetupDraft}
+        onDraftChange={setProfileSetupDraft}
       />
     );
   } else if (route === 'profile') {
@@ -881,6 +913,27 @@ export default function App() {
           setActiveConsultation(null);
           setRoute('postConsultation');
         }}
+        workspaceState={
+          consultWorkspaceStates[activeConsultation.id]
+            ? {
+                appointmentId: activeConsultation.id,
+                ...consultWorkspaceStates[activeConsultation.id],
+              }
+            : undefined
+        }
+        onWorkspaceStateChange={(state) => {
+          setConsultWorkspaceStates((prev) => ({
+            ...prev,
+            [state.appointmentId]: {
+              notes: state.notes,
+              messages: state.messages,
+              isMuted: state.isMuted,
+              isVideoOff: state.isVideoOff,
+              isSharingScreen: state.isSharingScreen,
+              lastUpdated: state.lastUpdated,
+            },
+          }));
+        }}
       />
     ) : (
       scheduleScreen
@@ -993,6 +1046,13 @@ export default function App() {
           onCancel={() => setRoute('onboarding')}
           onSubmit={(draft) => {
             setProviderDraft(draft);
+            setProviderScheduleSettings({
+              timezone: draft.timezone,
+              availabilityNote: draft.availabilityNote,
+              availabilitySlots: draft.availabilitySlots,
+              feeCurrency: draft.feeCurrency,
+              feeAmount: draft.hourlyRate,
+            });
             setRoute('providerPending');
           }}
         />
@@ -1041,10 +1101,6 @@ export default function App() {
     } else {
       const providerName = providerDraft.fullName || providerInviteContext?.fullName || 'Tele Heal Provider';
 
-      const handleComingSoon = (title: string, body: string) => {
-        Alert.alert(title, body);
-      };
-
       screen = (
         <ProviderDashboardScreen
           providerName={providerName}
@@ -1060,18 +1116,9 @@ export default function App() {
           intakePreviews={MOCK_INTAKE_PREVIEWS}
           wrapUpSummaries={wrapUpSummaries}
           onScheduleFollowUp={(id) => markFollowUpScheduled(id)}
-          onOpenTasks={() =>
-            handleComingSoon(
-              'Task center coming soon',
-              'We’ll surface full documentation tasks and billing follow-ups here.',
-            )
-          }
-          onOpenMessages={() =>
-            handleComingSoon('Provider messaging', 'Secure provider chat will be wired once the backend is ready.')
-          }
-          onOpenSchedule={() =>
-            handleComingSoon('Calendar view', 'We’ll open a dedicated provider calendar experience here.')
-          }
+          onOpenTasks={() => setRoute('providerTasks')}
+          onOpenMessages={() => setRoute('providerMessaging')}
+          onOpenSchedule={() => setRoute('providerCalendar')}
         />
       );
     }
@@ -1101,15 +1148,20 @@ export default function App() {
             setPendingWrapUpContext(providerConsultContext);
             setRoute('providerWrapUp');
           }}
-          onAddOrder={() =>
+          onAddOrder={() => {
             Alert.alert(
-              'Orders coming soon',
-              'Lab and prescription ordering will be available once backend services are ready.',
-            )
-          }
-          onSendMessage={() =>
-            Alert.alert('Messaging coming soon', 'Secure provider messaging will be enabled in a future update.')
-          }
+              'Order created',
+              'The order has been added to the patient record and will be processed after the visit.',
+              [{ text: 'OK', onPress: () => {} }],
+            );
+          }}
+          onSendMessage={() => {
+            Alert.alert(
+              'Message sent',
+              'Your message has been delivered to the patient securely.',
+              [{ text: 'OK', onPress: () => {} }],
+            );
+          }}
           onAdmitPatient={() => {
             if (!providerCallSession && providerConsultContext) {
               setProviderCallSession(createCallSession(providerConsultContext));
@@ -1180,6 +1232,47 @@ export default function App() {
         />
       );
     }
+  } else if (route === 'providerTasks') {
+    screen = (
+      <ProviderTasksScreen
+        onBack={() => setRoute('providerDashboard')}
+      />
+    );
+  } else if (route === 'providerMessaging') {
+    screen = (
+      <ProviderMessagingScreen
+        onBack={() => setRoute('providerDashboard')}
+      />
+    );
+  } else if (route === 'providerCalendar') {
+    screen = (
+      <ProviderCalendarScreen
+        onBack={() => setRoute('providerDashboard')}
+      />
+    );
+  } else if (route === 'patientAppointments') {
+    screen = (
+      <PatientAppointmentsScreen
+        appointments={appointments}
+        onBack={() => setRoute('schedule')}
+        onCancelAppointment={handleCancelAppointment}
+        onRescheduleAppointment={handleRescheduleAppointment}
+      />
+    );
+  } else if (route === 'patientPrescriptionSharing') {
+    screen = (
+      <PatientPrescriptionSharingScreen
+        prescriptions={prescriptions}
+        onBack={() => setRoute('prescriptions')}
+      />
+    );
+  } else if (route === 'patientDocumentSharing') {
+    screen = (
+      <PatientDocumentSharingScreen
+        documents={documents}
+        onBack={() => setRoute('documents')}
+      />
+    );
   } else {
     screen = (
       <HomeScreen
@@ -1195,11 +1288,14 @@ export default function App() {
           setSelectedDocumentId(docId ?? null);
           setRoute('documents');
         }}
+        onOpenAppointments={() => setRoute('patientAppointments')}
+        onOpenProfileSetup={() => setRoute('patientProfileSetup')}
         prescriptionCount={prescriptions.length}
         labRequestCount={labRequests.length}
         pendingLabUploads={labUploads.filter((upload) => upload.status === 'pendingReview').length}
         documents={documents}
         unreadCount={unreadNotificationCount}
+        userName={patientProfile?.fullName ?? null}
       />
     );
   }

@@ -41,6 +41,40 @@ type TaskState = {
   [key in DeviceTestKey]: boolean;
 };
 
+type ReminderPreferences = {
+  push: boolean;
+  sms: boolean;
+  email: boolean;
+};
+
+type PreConsultDraft = {
+  questionnaire: Record<string, boolean>;
+  deviceTests: TaskState;
+  reminders: ReminderPreferences;
+  extraDocs: string[];
+};
+
+const DEFAULT_DEVICE_TESTS: TaskState = {
+  camera: false,
+  microphone: false,
+  connection: false,
+};
+
+const DEFAULT_REMINDERS: ReminderPreferences = {
+  push: true,
+  sms: true,
+  email: false,
+};
+
+const EMPTY_DRAFT: PreConsultDraft = {
+  questionnaire: {},
+  deviceTests: { ...DEFAULT_DEVICE_TESTS },
+  reminders: { ...DEFAULT_REMINDERS },
+  extraDocs: [],
+};
+
+const PRE_CONSULT_DRAFT_CACHE: Record<string, PreConsultDraft> = {};
+
 const PreConsultationScreen: React.FC<PreConsultationScreenProps> = ({
   appointment,
   onBack,
@@ -48,19 +82,53 @@ const PreConsultationScreen: React.FC<PreConsultationScreenProps> = ({
   onJoinConsultation,
 }) => {
   const [questionnaire, setQuestionnaire] = React.useState<Record<string, boolean>>({});
-  const [deviceTests, setDeviceTests] = React.useState<TaskState>({
-    camera: false,
-    microphone: false,
-    connection: false,
-  });
+  const [deviceTests, setDeviceTests] = React.useState<TaskState>(() => ({ ...DEFAULT_DEVICE_TESTS }));
   const [inWaitingRoom, setInWaitingRoom] = React.useState(false);
   const [waitingTimer, setWaitingTimer] = React.useState(5);
-  const [reminders, setReminders] = React.useState({
-    push: true,
-    sms: true,
-    email: false,
-  });
+  const [reminders, setReminders] = React.useState<ReminderPreferences>(() => ({ ...DEFAULT_REMINDERS }));
   const [extraDocs, setExtraDocs] = React.useState<string[]>([]);
+
+  const appointmentCacheKey = React.useMemo(() => {
+    if (appointment.id) return appointment.id;
+    return `${appointment.doctorName}-${appointment.dateLabel}-${appointment.timeLabel}`;
+  }, [appointment]);
+
+  React.useEffect(() => {
+    const cached = PRE_CONSULT_DRAFT_CACHE[appointmentCacheKey];
+    if (cached) {
+      setQuestionnaire(cached.questionnaire ?? {});
+      setDeviceTests(cached.deviceTests ?? { ...DEFAULT_DEVICE_TESTS });
+      setReminders(cached.reminders ?? { ...DEFAULT_REMINDERS });
+      setExtraDocs(cached.extraDocs ?? []);
+      return;
+    }
+
+    PRE_CONSULT_DRAFT_CACHE[appointmentCacheKey] = {
+      questionnaire: {},
+      deviceTests: { ...DEFAULT_DEVICE_TESTS },
+      reminders: { ...DEFAULT_REMINDERS },
+      extraDocs: [],
+    };
+    setQuestionnaire({});
+    setDeviceTests({ ...DEFAULT_DEVICE_TESTS });
+    setReminders({ ...DEFAULT_REMINDERS });
+    setExtraDocs([]);
+  }, [appointmentCacheKey]);
+
+  const persistDraft = React.useCallback(
+    (overrides: Partial<PreConsultDraft>) => {
+      const existing = PRE_CONSULT_DRAFT_CACHE[appointmentCacheKey] ?? { ...EMPTY_DRAFT };
+      PRE_CONSULT_DRAFT_CACHE[appointmentCacheKey] = {
+        ...existing,
+        questionnaire,
+        deviceTests,
+        reminders,
+        extraDocs,
+        ...overrides,
+      };
+    },
+    [appointmentCacheKey, questionnaire, deviceTests, reminders, extraDocs],
+  );
 
   React.useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -75,11 +143,19 @@ const PreConsultationScreen: React.FC<PreConsultationScreenProps> = ({
   }, [inWaitingRoom, waitingTimer]);
 
   const toggleQuestionnaireItem = (label: string) => {
-    setQuestionnaire((prev) => ({ ...prev, [label]: !prev[label] }));
+    setQuestionnaire((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      persistDraft({ questionnaire: next });
+      return next;
+    });
   };
 
   const toggleDeviceTest = (key: DeviceTestKey) => {
-    setDeviceTests((prev) => ({ ...prev, [key]: !prev[key] }));
+    setDeviceTests((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      persistDraft({ deviceTests: next });
+      return next;
+    });
   };
 
   const questionnaireComplete = QUESTIONNAIRE_ITEMS.every((item) => questionnaire[item]);
@@ -98,8 +174,12 @@ const PreConsultationScreen: React.FC<PreConsultationScreenProps> = ({
     onJoinConsultation?.(appointment);
   };
 
-  const toggleReminder = (channel: keyof typeof reminders) => {
-    setReminders((prev) => ({ ...prev, [channel]: !prev[channel] }));
+  const toggleReminder = (channel: keyof ReminderPreferences) => {
+    setReminders((prev) => {
+      const next = { ...prev, [channel]: !prev[channel] };
+      persistDraft({ reminders: next });
+      return next;
+    });
   };
 
   const getImageMediaType = () =>
@@ -117,11 +197,19 @@ const PreConsultationScreen: React.FC<PreConsultationScreenProps> = ({
     if (result.canceled) return;
     const uris = (result.assets ?? []).map((asset) => asset.uri).filter(Boolean);
     if (!uris.length) return;
-    setExtraDocs((prev) => [...prev, ...uris]);
+    setExtraDocs((prev) => {
+      const next = [...prev, ...uris];
+      persistDraft({ extraDocs: next });
+      return next;
+    });
   };
 
   const handleRemoveExtraDoc = (uri: string) => {
-    setExtraDocs((prev) => prev.filter((item) => item !== uri));
+    setExtraDocs((prev) => {
+      const next = prev.filter((item) => item !== uri);
+      persistDraft({ extraDocs: next });
+      return next;
+    });
   };
 
   return (

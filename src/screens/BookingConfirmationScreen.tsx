@@ -192,12 +192,22 @@ const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps> = ({
               </View>
               {visitDetails.attachments.length > 0 ? (
                 <View style={styles.attachmentsList}>
-                  {visitDetails.attachments.map((file) => (
-                    <View key={file} style={styles.attachmentItem}>
-                      <Ionicons name="document-outline" size={14} color={theme.colors.primary.main} />
-                      <ThemedText variant="caption1" color="primary" numberOfLines={1}>
-                        {file.split('/').pop()}
-                      </ThemedText>
+                  {visitDetails.attachments.map((attachment) => (
+                    <View key={attachment.id} style={styles.attachmentItem}>
+                      <Ionicons
+                        name="document-outline"
+                        size={14}
+                        color={theme.colors.primary.main}
+                        style={styles.attachmentIcon}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <ThemedText variant="caption1" color="primary" numberOfLines={1}>
+                          {attachment.name || attachment.uri.split('/').pop()}
+                        </ThemedText>
+                        <ThemedText variant="caption2" color="secondary">
+                          {attachment.source === 'camera' ? 'Camera upload' : 'Photo library'}
+                        </ThemedText>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -334,8 +344,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.spacing.xs,
     paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    borderRadius: theme.borderRadius.full,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.lg,
     backgroundColor: theme.colors.background.muted,
   },
   timelineCard: {
@@ -410,6 +420,9 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
     borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.background.muted,
+  },
+  attachmentIcon: {
+    marginRight: theme.spacing.sm,
   },
   secondaryButton: {
     alignSelf: 'flex-start',

@@ -18,6 +18,42 @@ type PaymentScreenProps = {
 
 const FALLBACK_EMAIL = 'patient@example.com';
 
+type PaymentStage = 'initializing' | 'awaitingPrompt' | 'processing' | 'completed' | 'error';
+
+type PaymentStep = {
+  key: Exclude<PaymentStage, 'error'>;
+  label: string;
+  description: string;
+  icon: keyof typeof Ionicons.glyphMap;
+};
+
+const PAYMENT_STEPS: PaymentStep[] = [
+  {
+    key: 'initializing',
+    label: 'Secure session',
+    description: 'Connecting to Tele Heal payment services',
+    icon: 'shield-checkmark-outline',
+  },
+  {
+    key: 'awaitingPrompt',
+    label: 'Waiting for approval',
+    description: 'Prompt shown to patient for confirmation',
+    icon: 'phone-portrait-outline',
+  },
+  {
+    key: 'processing',
+    label: 'Processing payment',
+    description: 'Paystack verifying payment details',
+    icon: 'sync-outline',
+  },
+  {
+    key: 'completed',
+    label: 'Receipt sent',
+    description: 'We’ll email the receipt and update your visit',
+    icon: 'checkmark-circle-outline',
+  },
+];
+
 const PaymentScreen: React.FC<PaymentScreenProps> = ({ intent, onClose, onSuccess, onError }) => {
   const formattedAmount = React.useMemo(() => {
     try {
@@ -110,13 +146,23 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ intent, onClose, onSucces
       try {
         const payload = JSON.parse(event.nativeEvent.data);
         if (payload.status === 'success') {
+          setPaymentStage('processing');
+          setStatusMessage('Payment confirmed. Finalizing booking…');
           onSuccess(payload.reference);
+          setPaymentStage('completed');
+          setStatusMessage('Payment successful. Receipt sent to your email.');
         } else if (payload.status === 'closed') {
+          setPaymentStage('error');
+          setStatusMessage('Checkout was closed before finishing.');
           onClose();
         } else if (payload.status === 'failed') {
+          setPaymentStage('error');
+          setStatusMessage(payload.message ?? 'Unable to complete payment. Try again.');
           onError?.(payload.message);
         }
       } catch (error) {
+        setPaymentStage('error');
+        setStatusMessage('Unexpected payment error. Try again.');
         onError?.(error instanceof Error ? error.message : 'Unknown payment error');
       }
     },
@@ -124,6 +170,117 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ intent, onClose, onSucces
   );
 
   const isKeyConfigured = PAYSTACK_PUBLIC_KEY && PAYSTACK_PUBLIC_KEY !== 'pk_test_xxxxxxxx';
+  const [paymentStage, setPaymentStage] = React.useState<PaymentStage>('initializing');
+  const [statusMessage, setStatusMessage] = React.useState('Connecting to Paystack…');
+  const mockTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (mockTimerRef.current) {
+        clearTimeout(mockTimerRef.current);
+      }
+    };
+  }, []);
+
+  const currentStepIndex = React.useMemo(() => {
+    const index = PAYMENT_STEPS.findIndex((step) => step.key === paymentStage);
+    return index === -1 ? 0 : index;
+  }, [paymentStage]);
+
+  const beginMockPaymentFlow = () => {
+    setPaymentStage('awaitingPrompt');
+    setStatusMessage('Pretending to prompt patient for payment approval…');
+
+    mockTimerRef.current = setTimeout(() => {
+      setPaymentStage('processing');
+      setStatusMessage('Processing mock payment…');
+
+      mockTimerRef.current = setTimeout(() => {
+        setPaymentStage('completed');
+        setStatusMessage('Payment marked as paid for demo purposes.');
+        onSuccess(`mock-${Date.now()}`);
+      }, 1800);
+    }, 1600);
+  };
+
+  const renderStatusTracker = () => (
+    <View style={styles.statusTracker}>
+      {PAYMENT_STEPS.map((step, index) => {
+        const isActive = paymentStage === step.key;
+        const isComplete = index < currentStepIndex;
+        return (
+          <View key={step.key} style={styles.statusStep}>
+            <View
+              style={[
+                styles.statusIcon,
+                (isActive || isComplete) && styles.statusIconActive,
+                isComplete && styles.statusIconComplete,
+              ]}
+            >
+              <Ionicons
+                name={step.icon}
+                size={16}
+                color={
+                  isActive || isComplete ? theme.colors.neutral.white : theme.colors.text.secondary
+                }
+              />
+            </View>
+            <View style={styles.statusCopy}>
+              <ThemedText variant="caption1" color={isActive ? 'primary' : 'secondary'}>
+                {step.label}
+              </ThemedText>
+              <ThemedText variant="caption2" color="secondary">
+                {step.description}
+              </ThemedText>
+            </View>
+          </View>
+        );
+      })}
+      <View style={styles.statusMessageRow}>
+        <Ionicons
+          name={
+            paymentStage === 'error'
+              ? 'alert-circle-outline'
+              : paymentStage === 'completed'
+                ? 'checkmark-circle-outline'
+                : 'information-circle-outline'
+          }
+          size={16}
+          color={
+            paymentStage === 'error'
+              ? theme.colors.semantic.danger
+              : paymentStage === 'completed'
+                ? theme.colors.semantic.success
+                : theme.colors.text.secondary
+          }
+        />
+        <ThemedText
+          variant="caption1"
+          color="secondary"
+          style={[
+            styles.statusMessageText,
+            paymentStage === 'error' && styles.statusMessageError,
+            paymentStage === 'completed' && styles.statusMessageSuccess,
+          ]}
+        >
+          {statusMessage}
+        </ThemedText>
+      </View>
+    </View>
+  );
+
+  React.useEffect(() => {
+    if (!isKeyConfigured) return;
+    setPaymentStage('initializing');
+    setStatusMessage('Launching secure Paystack session…');
+    const timer = setTimeout(() => {
+      setPaymentStage('awaitingPrompt');
+      setStatusMessage('Prompting Paystack checkout for the patient.');
+    }, 900);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isKeyConfigured]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -164,16 +321,29 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ intent, onClose, onSucces
         </View>
       </View>
 
+      {renderStatusTracker()}
+
       {!isKeyConfigured ? (
         <View style={styles.placeholderCard}>
           <Ionicons name="alert-circle-outline" size={28} color={theme.colors.semantic.warning} />
           <ThemedText variant="headline3" color="primary">
-            Configure Paystack key
+            Demo mode active
           </ThemedText>
           <ThemedText variant="body3" color="secondary" style={styles.placeholderCopy}>
-            Add your Paystack publishable key to EXPO_PUBLIC_PAYSTACK_KEY and restart the app to enable payments.
+            Add your Paystack publishable key to EXPO_PUBLIC_PAYSTACK_KEY and restart the app to process real payments.
+            Until then, you can simulate a successful payment for design reviews.
           </ThemedText>
-          <Button label="Close" variant="secondary" fullWidth onPress={onClose} />
+          <View style={styles.placeholderButtons}>
+            <Button label="Close" variant="secondary" fullWidth onPress={onClose} />
+            <View style={styles.placeholderSpacer} />
+            <Button
+              label="Simulate payment"
+              variant="primary"
+              fullWidth
+              onPress={beginMockPaymentFlow}
+              disabled={paymentStage === 'processing'}
+            />
+          </View>
         </View>
       ) : (
         <View style={styles.webviewShell}>
@@ -202,6 +372,60 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.background.muted,
+  },
+  statusTracker: {
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    borderRadius: theme.borderRadius.xxl,
+    backgroundColor: theme.colors.background.card,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
+    ...theme.shadows.md,
+  },
+  statusStep: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    alignItems: 'flex-start',
+  },
+  statusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.background.muted,
+  },
+  statusIconActive: {
+    backgroundColor: theme.colors.primary.main,
+    borderColor: theme.colors.primary.main,
+  },
+  statusIconComplete: {
+    backgroundColor: theme.colors.semantic.success,
+    borderColor: theme.colors.semantic.success,
+  },
+  statusCopy: {
+    flex: 1,
+    gap: theme.spacing.xs / 2,
+  },
+  statusMessageRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border.light,
+    paddingTop: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  statusMessageText: {
+    flex: 1,
+  },
+  statusMessageError: {
+    color: theme.colors.semantic.danger,
+  },
+  statusMessageSuccess: {
+    color: theme.colors.semantic.success,
   },
   header: {
     flexDirection: 'row',
@@ -256,6 +480,12 @@ const styles = StyleSheet.create({
   },
   placeholderCopy: {
     textAlign: 'center',
+  },
+  placeholderButtons: {
+    width: '100%',
+  },
+  placeholderSpacer: {
+    height: theme.spacing.sm,
   },
   webviewShell: {
     flex: 1,

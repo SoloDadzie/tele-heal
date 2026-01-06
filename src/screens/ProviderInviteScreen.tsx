@@ -42,8 +42,23 @@ const ProviderInviteScreen: React.FC<ProviderInviteScreenProps> = ({
   const isOtpEnabled = phase === 'otp' || phase === 'verified';
   const isOtpValid = otp.trim().length === MOCK_OTP.length;
 
+  const validateEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
+  const validateInviteCode = (value: string) => /^TH-[0-9A-Z]{4,}$/.test(value.trim());
+
   const handleValidate = () => {
     if (!isFormValid) return;
+
+    if (!validateEmail(email)) {
+      setStatus('error');
+      setStatusMessage('Enter a valid work email (example@clinic.com).');
+      return;
+    }
+    if (!validateInviteCode(inviteCode)) {
+      setStatus('error');
+      setStatusMessage('Invite codes start with TH- followed by your digits.');
+      return;
+    }
+
     setStatus('validating');
     setStatusMessage('');
     setPhase('invite');

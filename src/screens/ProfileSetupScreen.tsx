@@ -49,6 +49,8 @@ export type ProfileSetupScreenProps = {
   initialCountryCode?: string;
   onDone: (profile: PatientProfile) => void;
   onBack: () => void;
+  initialDraft?: Omit<PatientProfile, 'completedAt'> | null;
+  onDraftChange?: (draft: Omit<PatientProfile, 'completedAt'>) => void;
 };
 
 type StepKey = 'demographics' | 'history' | 'insurance' | 'consent';
@@ -76,12 +78,19 @@ const STEPS: { key: StepKey; title: string; subtitle: string }[] = [
   },
 ];
 
+type UploadState = {
+  status: 'idle' | 'requesting' | 'uploading' | 'success' | 'error';
+  message?: string;
+};
+
 const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   initialEmail,
   initialPhone,
   initialCountryCode,
   onDone,
   onBack,
+  initialDraft,
+  onDraftChange,
 }) => {
   const [stepIndex, setStepIndex] = React.useState(0);
   const progressScrollRef = React.useRef<ScrollView | null>(null);
@@ -92,25 +101,30 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     consent: { x: 0, width: 0 },
   });
 
-  const [values, setValues] = React.useState<Omit<PatientProfile, 'completedAt'>>({
-    fullName: '',
-    phone: initialPhone ?? '',
-    email: initialEmail ?? '',
-    gender: '',
-    dateOfBirth: '',
-    address: '',
+  const [values, setValues] = React.useState<Omit<PatientProfile, 'completedAt'>>(() => {
+    if (initialDraft) {
+      return initialDraft;
+    }
+    return {
+      fullName: '',
+      phone: initialPhone ?? '',
+      email: initialEmail ?? '',
+      gender: '',
+      dateOfBirth: '',
+      address: '',
 
-    medicalHistory: '',
-    allergies: '',
-    medications: '',
+      medicalHistory: '',
+      allergies: '',
+      medications: '',
 
-    insuranceProvider: '',
-    insuranceMemberId: '',
-    insuranceFrontUri: null,
-    insuranceBackUri: null,
+      insuranceProvider: '',
+      insuranceMemberId: '',
+      insuranceFrontUri: null,
+      insuranceBackUri: null,
 
-    consentTelemedicine: false,
-    consentPrivacy: false,
+      consentTelemedicine: false,
+      consentPrivacy: false,
+    };
   });
   const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryOption | undefined>(() => {
     if (!initialCountryCode) return undefined;
@@ -140,6 +154,11 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [isGenderModalVisible, setIsGenderModalVisible] = React.useState(false);
   const [isDobModalVisible, setIsDobModalVisible] = React.useState(false);
 
+  const [uploadStates, setUploadStates] = React.useState<{ front: UploadState; back: UploadState }>({
+    front: { status: 'idle' },
+    back: { status: 'idle' },
+  });
+
   const canContinue = React.useMemo(() => {
     if (step.key === 'demographics') {
       return Boolean(values.fullName.trim() && values.phone.trim() && values.email.trim());
@@ -148,28 +167,53 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       return true;
     }
     if (step.key === 'insurance') {
-      return true;
+      const hasAnyInsuranceInput =
+        values.insuranceProvider.trim().length > 0 ||
+        values.insuranceMemberId.trim().length > 0 ||
+        Boolean(values.insuranceFrontUri) ||
+        Boolean(values.insuranceBackUri);
+
+      if (!hasAnyInsuranceInput) {
+        return true;
+      }
+
+      const uploadsReady =
+        Boolean(values.insuranceFrontUri && values.insuranceBackUri) &&
+        uploadStates.front.status !== 'uploading' &&
+        uploadStates.back.status !== 'uploading';
+
+      return Boolean(values.insuranceProvider.trim() && values.insuranceMemberId.trim() && uploadsReady);
     }
     if (step.key === 'consent') {
       return values.consentTelemedicine && values.consentPrivacy;
     }
     return false;
-  }, [step.key, values]);
+  }, [step.key, uploadStates, values]);
 
   const IMAGE_MEDIA_TYPES: ImagePicker.MediaType[] = ['images'];
 
+  const updateUploadState = React.useCallback((side: 'front' | 'back', next: UploadState) => {
+    setUploadStates((prev) => ({ ...prev, [side]: next }));
+  }, []);
+
   const handleInsuranceImageSelection = async (side: 'front' | 'back', source: 'library' | 'camera') => {
+    updateUploadState(side, { status: 'requesting' });
     const permission =
       source === 'camera'
         ? await ImagePicker.requestCameraPermissionsAsync()
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (permission.status !== 'granted') {
+      updateUploadState(side, {
+        status: 'error',
+        message: 'Permission required. Please allow access to continue.',
+      });
       return;
     }
 
-    const picker =
-      source === 'camera' ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+    updateUploadState(side, { status: 'uploading' });
+
+    const picker = source === 'camera' ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
 
     const result = await picker({
       mediaTypes: IMAGE_MEDIA_TYPES,
@@ -178,13 +222,23 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       quality: 0.9,
     });
 
-    if (result.canceled) return;
+    if (result.canceled) {
+      updateUploadState(side, { status: 'idle' });
+      return;
+    }
     const uri = result.assets?.[0]?.uri;
-    if (!uri) return;
+    if (!uri) {
+      updateUploadState(side, { status: 'error', message: 'Unable to read selected file.' });
+      return;
+    }
 
     setValues((prev) =>
       side === 'front' ? { ...prev, insuranceFrontUri: uri } : { ...prev, insuranceBackUri: uri },
     );
+    updateUploadState(side, {
+      status: 'success',
+      message: source === 'camera' ? 'Photo captured' : 'Image added',
+    });
   };
 
   React.useEffect(() => {
@@ -194,6 +248,10 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       progressScrollRef.current.scrollTo({ x: targetX, animated: true });
     }
   }, [step.key]);
+
+  React.useEffect(() => {
+    onDraftChange?.(values);
+  }, [values, onDraftChange]);
 
   const handleNext = () => {
     if (!canContinue) return;
@@ -281,6 +339,27 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           {value && <Ionicons name="checkmark" size={16} color={theme.colors.neutral.white} />}
         </View>
       </TouchableOpacity>
+    );
+  };
+
+  const renderUploadStatus = (side: 'front' | 'back') => {
+    const state = uploadStates[side];
+    if (state.status === 'idle') return null;
+
+    const color =
+      state.status === 'success'
+        ? theme.colors.semantic.success
+        : state.status === 'error'
+          ? theme.colors.semantic.danger
+          : theme.colors.text.secondary;
+
+    return (
+      <ThemedText variant="caption1" color="secondary" style={[styles.uploadStatusText, { color }]}>
+        {state.status === 'requesting' && 'Requesting permission…'}
+        {state.status === 'uploading' && 'Uploading…'}
+        {state.status === 'success' && (state.message ?? 'Upload complete')}
+        {state.status === 'error' && (state.message ?? 'Upload failed. Try again.')}
+      </ThemedText>
     );
   };
 
@@ -516,13 +595,18 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   </View>
                 </View>
 
+                {renderUploadStatus('front')}
+
                 {values.insuranceFrontUri && (
                   <View style={styles.previewWrapper}>
                     <Image source={{ uri: values.insuranceFrontUri }} style={styles.previewImage} />
                     <TouchableOpacity
                       style={styles.removePreviewButton}
                       activeOpacity={0.85}
-                      onPress={() => setValues((prev) => ({ ...prev, insuranceFrontUri: null }))}
+                      onPress={() => {
+                        setValues((prev) => ({ ...prev, insuranceFrontUri: null }));
+                        updateUploadState('front', { status: 'idle' });
+                      }}
                     >
                       <Ionicons name="close" size={16} color={theme.colors.neutral.white} />
                     </TouchableOpacity>
@@ -569,18 +653,27 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   </View>
                 </View>
 
+                {renderUploadStatus('back')}
+
                 {values.insuranceBackUri && (
                   <View style={styles.previewWrapper}>
                     <Image source={{ uri: values.insuranceBackUri }} style={styles.previewImage} />
                     <TouchableOpacity
                       style={styles.removePreviewButton}
                       activeOpacity={0.85}
-                      onPress={() => setValues((prev) => ({ ...prev, insuranceBackUri: null }))}
+                      onPress={() => {
+                        setValues((prev) => ({ ...prev, insuranceBackUri: null }));
+                        updateUploadState('back', { status: 'idle' });
+                      }}
                     >
                       <Ionicons name="close" size={16} color={theme.colors.neutral.white} />
                     </TouchableOpacity>
                   </View>
                 )}
+                <ThemedText variant="caption1" color="secondary">
+                  We require clear photos of both sides when sharing insurance details. Leave this section blank if you
+                  plan to self-pay.
+                </ThemedText>
               </View>
             )}
 
@@ -902,6 +995,9 @@ const styles = StyleSheet.create({
   },
   addressHint: {
     marginTop: theme.spacing.sm,
+  },
+  uploadStatusText: {
+    marginTop: theme.spacing.xs,
   },
   footer: {
     paddingHorizontal: theme.spacing.lg,

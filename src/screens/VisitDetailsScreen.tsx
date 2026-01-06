@@ -15,7 +15,14 @@ export type AppointmentType = 'urgent' | 'scheduled';
 export type VisitDetails = {
   appointmentType: AppointmentType;
   reason: string;
-  attachments: string[];
+  attachments: Attachment[];
+};
+
+type Attachment = {
+  id: string;
+  uri: string;
+  name: string;
+  source: 'camera' | 'library';
 };
 
 export type VisitDetailsScreenProps = {
@@ -23,42 +30,82 @@ export type VisitDetailsScreenProps = {
   onContinue: (details: VisitDetails) => void;
 };
 
+const MIN_REASON_CHARACTERS = 30;
+
 const VisitDetailsScreen: React.FC<VisitDetailsScreenProps> = ({ onBack, onContinue }) => {
   const [appointmentType, setAppointmentType] = React.useState<AppointmentType>('scheduled');
   const [reason, setReason] = React.useState('');
-  const [attachments, setAttachments] = React.useState<string[]>([]);
+  const [attachments, setAttachments] = React.useState<Attachment[]>([]);
+  const [attachmentError, setAttachmentError] = React.useState<string | null>(null);
+  const [isAttaching, setIsAttaching] = React.useState(false);
 
-  const canContinue = reason.trim().length > 0;
+  const trimmedReason = reason.trim();
+  const reasonCharsRemaining = Math.max(0, MIN_REASON_CHARACTERS - trimmedReason.length);
+  const reasonHelperCopy =
+    trimmedReason.length < MIN_REASON_CHARACTERS
+      ? `${reasonCharsRemaining} more character${reasonCharsRemaining === 1 ? '' : 's'} to help your provider prepare.`
+      : 'Looks great—thanks for the detail.';
+  const canContinue = trimmedReason.length >= MIN_REASON_CHARACTERS;
 
-  const getImageMediaType = () =>
-    (ImagePicker as any).MediaType?.Images ?? ImagePicker.MediaTypeOptions.Images;
+  const IMAGE_MEDIA_TYPES: ImagePicker.MediaType[] = ['images'];
 
-  const handleAddAttachment = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') return;
+  const handleAddAttachment = async (source: 'library' | 'camera') => {
+    setAttachmentError(null);
+    setIsAttaching(true);
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: getImageMediaType(),
-      allowsMultipleSelection: true,
-      quality: 0.8,
+    const permission =
+      source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (permission.status !== 'granted') {
+      setIsAttaching(false);
+      setAttachmentError('Please allow Tele Heal to access your camera or photos to attach files.');
+      return;
+    }
+
+    const picker =
+      source === 'camera' ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+
+    const result = await picker({
+      mediaTypes: IMAGE_MEDIA_TYPES,
+      allowsMultipleSelection: source === 'library',
+      quality: 0.85,
     });
 
-    if (result.canceled) return;
-    const uris = (result.assets ?? []).map((a) => a.uri).filter(Boolean);
-    if (!uris.length) return;
+    if (result.canceled) {
+      setIsAttaching(false);
+      return;
+    }
 
-    setAttachments((prev) => [...prev, ...uris]);
+    const assets = (result.assets ?? []).filter(Boolean);
+    if (!assets.length) {
+      setAttachmentError('No files were selected. Please try again.');
+      setIsAttaching(false);
+      return;
+    }
+
+    setAttachments((prev) => [
+      ...prev,
+      ...assets.map((asset, index) => ({
+        id: `${Date.now()}-${index}`,
+        uri: asset.uri,
+        name: asset.fileName ?? `Attachment ${prev.length + index + 1}`,
+        source,
+      })),
+    ]);
+    setIsAttaching(false);
   };
 
-  const handleRemoveAttachment = (uri: string) => {
-    setAttachments((prev) => prev.filter((x) => x !== uri));
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
   };
 
   const handleContinue = () => {
     if (!canContinue) return;
     onContinue({
       appointmentType,
-      reason: reason.trim(),
+      reason: trimmedReason,
       attachments,
     });
   };
@@ -184,7 +231,29 @@ const VisitDetailsScreen: React.FC<VisitDetailsScreenProps> = ({ onBack, onConti
               onChangeText={setReason}
               multiline
             />
+            <ThemedText
+              variant="caption1"
+              color={trimmedReason.length < MIN_REASON_CHARACTERS ? 'secondary' : 'primary'}
+              style={styles.reasonHelper}
+            >
+              {reasonHelperCopy}
+            </ThemedText>
           </ThemedCard>
+
+          {appointmentType === 'urgent' && (
+            <ThemedCard style={styles.urgentCard}>
+              <View style={styles.urgentCardHeader}>
+                <Ionicons name="warning-outline" size={16} color={theme.colors.semantic.warning} />
+                <ThemedText variant="body2" color="primary">
+                  Urgent visits book into the next available slot.
+                </ThemedText>
+              </View>
+              <ThemedText variant="caption1" color="secondary">
+                Be ready to join within 15 minutes once your doctor confirms. Scheduled visits let you pick a specific
+                time.
+              </ThemedText>
+            </ThemedCard>
+          )}
 
           <ThemedCard style={styles.infoCard}>
             <View style={styles.attachHeaderRow}>
@@ -194,13 +263,49 @@ const VisitDetailsScreen: React.FC<VisitDetailsScreenProps> = ({ onBack, onConti
                 icon="images-outline"
                 style={styles.attachSectionHeader}
               />
-              <TouchableOpacity style={styles.addButton} activeOpacity={0.85} onPress={handleAddAttachment}>
-                <Ionicons name="add" size={18} color={theme.colors.neutral.white} />
+              <TouchableOpacity
+                style={[styles.addButton, isAttaching && styles.addButtonDisabled]}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('library')}
+                disabled={isAttaching}
+              >
+                <Ionicons name={isAttaching ? 'hourglass-outline' : 'add'} size={18} color={theme.colors.neutral.white} />
               </TouchableOpacity>
             </View>
 
+            <View style={styles.attachmentActionsRow}>
+              <TouchableOpacity
+                style={styles.secondaryAttachButton}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('library')}
+                disabled={isAttaching}
+              >
+                <Ionicons name="images-outline" size={16} color={theme.colors.primary.main} />
+                <ThemedText variant="caption1" color="primary">
+                  Photo library
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryAttachButton}
+                activeOpacity={0.85}
+                onPress={() => handleAddAttachment('camera')}
+                disabled={isAttaching}
+              >
+                <Ionicons name="camera-outline" size={16} color={theme.colors.primary.main} />
+                <ThemedText variant="caption1" color="primary">
+                  Use camera
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {!!attachmentError && (
+              <ThemedText variant="caption1" color="secondary" style={styles.attachmentError}>
+                {attachmentError}
+              </ThemedText>
+            )}
+
             {attachments.length === 0 ? (
-              <TouchableOpacity style={styles.uploadCard} activeOpacity={0.9} onPress={handleAddAttachment}>
+              <View style={styles.uploadCard}>
                 <View style={styles.uploadLeft}>
                   <View style={styles.uploadIcon}>
                     <Ionicons name="cloud-upload-outline" size={22} color={theme.colors.primary.main} />
@@ -210,21 +315,28 @@ const VisitDetailsScreen: React.FC<VisitDetailsScreenProps> = ({ onBack, onConti
                       Add images
                     </ThemedText>
                     <ThemedText variant="body3" color="secondary">
-                      JPG/PNG from your photo library
+                      JPG/PNG from your photo library or camera
                     </ThemedText>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.colors.text.secondary} />
-              </TouchableOpacity>
+                <ThemedText variant="caption1" color="secondary">
+                  Optional
+                </ThemedText>
+              </View>
             ) : (
               <View style={styles.attachmentGrid}>
-                {attachments.map((uri) => (
-                  <View key={uri} style={styles.attachmentTile}>
-                    <Image source={{ uri }} style={styles.attachmentImage} />
+                {attachments.map((attachment) => (
+                  <View key={attachment.id} style={styles.attachmentTile}>
+                    <Image source={{ uri: attachment.uri }} style={styles.attachmentImage} />
+                    <View style={styles.attachmentBadge}>
+                      <ThemedText variant="caption2" color="inverse">
+                        {attachment.source === 'camera' ? 'Camera' : 'Library'}
+                      </ThemedText>
+                    </View>
                     <TouchableOpacity
                       style={styles.removeAttachmentButton}
                       activeOpacity={0.85}
-                      onPress={() => handleRemoveAttachment(uri)}
+                      onPress={() => handleRemoveAttachment(attachment.id)}
                     >
                       <Ionicons name="close" size={14} color={theme.colors.neutral.white} />
                     </TouchableOpacity>
@@ -365,6 +477,23 @@ const styles = StyleSheet.create({
   infoCard: {
     marginBottom: theme.spacing.md,
   },
+  reasonHelper: {
+    marginTop: theme.spacing.sm,
+  },
+  urgentCard: {
+    marginBottom: theme.spacing.md,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.semantic.warning,
+    backgroundColor: theme.colors.background.card,
+    borderRadius: theme.borderRadius.xxl,
+    padding: theme.spacing.md,
+    gap: theme.spacing.xs,
+  },
+  urgentCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
   attachHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -382,6 +511,28 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary.main,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addButtonDisabled: {
+    opacity: 0.5,
+  },
+  attachmentActionsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  secondaryAttachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm / 1.2,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.background.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+  },
+  attachmentError: {
+    marginBottom: theme.spacing.sm,
   },
   uploadCard: {
     flexDirection: 'row',
@@ -425,6 +576,15 @@ const styles = StyleSheet.create({
   attachmentImage: {
     width: '100%',
     height: '100%',
+  },
+  attachmentBadge: {
+    position: 'absolute',
+    left: 6,
+    top: 6,
+    paddingHorizontal: theme.spacing.xs,
+    paddingVertical: theme.spacing.xs / 1.5,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   removeAttachmentButton: {
     position: 'absolute',

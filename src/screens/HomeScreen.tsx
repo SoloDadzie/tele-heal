@@ -20,6 +20,8 @@ type CareTask = {
   title: string;
   description: string;
   status: 'pending' | 'completed';
+  actionLabel?: string;
+  action?: () => void;
 };
 
 type CareTeamMember = {
@@ -108,6 +110,12 @@ type HomeScreenProps = {
   pendingLabUploads?: number;
   documents?: DocumentRecord[];
   unreadCount?: number;
+  userName?: string | null;
+  isProfileComplete?: boolean;
+  hasConsented?: boolean;
+  hasPendingPreConsult?: boolean;
+  onOpenAppointments?: () => void;
+  onOpenProfileSetup?: () => void;
 };
 
 const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -125,10 +133,40 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   pendingLabUploads = 0,
   documents = [],
   unreadCount,
+  userName,
+  isProfileComplete = false,
+  hasConsented = false,
+  hasPendingPreConsult = false,
+  onOpenAppointments,
+  onOpenProfileSetup,
 }) => {
   const [activeTab, setActiveTab] = React.useState('home');
 
-  const userDisplayName = 'Riley Cooper';
+  const userDisplayName = React.useMemo(() => {
+    const trimmed = userName?.trim();
+    if (trimmed && trimmed.length > 0) {
+      return trimmed;
+    }
+    return 'Tele Heal Patient';
+  }, [userName]);
+
+  const todayLabel = React.useMemo(() => {
+    const now = new Date();
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const day = now.getDate();
+    const month = now.toLocaleDateString('en-US', { month: 'short' });
+    return `${weekday}, ${day} ${month}`;
+  }, []);
+
+  const userInitials = React.useMemo(() => {
+    const parts = userDisplayName.split(/\s+/).filter(Boolean);
+    if (!parts.length) return 'TP';
+    return parts
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, [userDisplayName]);
 
   const quickShortcuts: QuickShortcut[] = React.useMemo(
     () => [
@@ -279,6 +317,34 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   };
 
+  const careTasks: CareTask[] = React.useMemo(() => {
+    const tasks: CareTask[] = [];
+
+    if (!isProfileComplete) {
+      tasks.push({
+        id: 'task-profile',
+        title: 'Complete your profile',
+        description: 'Add personal info, medical history, insurance & consent forms',
+        status: 'pending',
+        actionLabel: 'Start setup',
+        action: onOpenProfileSetup,
+      });
+    }
+
+    if (hasPendingPreConsult) {
+      tasks.push({
+        id: 'task-prep',
+        title: 'Pre-visit checklist',
+        description: 'Complete intake questionnaire before your appointment',
+        status: 'pending',
+        actionLabel: 'Start now',
+        action: onOpenSchedule,
+      });
+    }
+
+    return tasks;
+  }, [hasPendingPreConsult, isProfileComplete, onOpenProfileSetup, onOpenSchedule]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
@@ -286,7 +352,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
           <View style={styles.topRow}>
             <View style={styles.greetingBlock}>
               <ThemedText variant="caption2" color="secondary">
-                Friday, 4 Sep
+                {todayLabel}
               </ThemedText>
               <ThemedText variant="body2" color="secondary" style={styles.greetingSubtitle}>
                 Welcome back
@@ -326,12 +392,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
           </View>
 
           <View style={styles.heroCard}>
-            <View style={styles.heroHeader}>
-              <View style={styles.avatar}>
-                <ThemedText variant="body3" color="inverse">
-                  RC
-                </ThemedText>
-              </View>
+              <View style={styles.heroHeader}>
+                <View style={styles.avatar}>
+                  <ThemedText variant="body3" color="inverse">
+                    {userInitials}
+                  </ThemedText>
+                </View>
               <View>
                 <ThemedText variant="caption1" color="inverse">
                   Care plan
@@ -519,10 +585,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                     {task.description}
                   </ThemedText>
                 </View>
-                {task.status === 'pending' && (
-                  <TouchableOpacity activeOpacity={0.8} onPress={onOpenProfile}>
+                {task.action && (
+                  <TouchableOpacity activeOpacity={0.8} onPress={task.action}>
                     <ThemedText variant="body3" color="primary">
-                      Open
+                      {task.actionLabel ?? (task.status === 'completed' ? 'View' : 'Open')}
                     </ThemedText>
                   </TouchableOpacity>
                 )}
@@ -566,7 +632,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
             <ThemedText variant="headline2" color="primary">
               Documents & results
             </ThemedText>
-            <TouchableOpacity onPress={onOpenDocuments}>
+            <TouchableOpacity onPress={() => onOpenDocuments()}>
               <ThemedText variant="body3" color="secondary">
                 View archive
               </ThemedText>
@@ -590,7 +656,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                   <ThemedText variant="caption2" color="secondary">
                     {doc.date}
                   </ThemedText>
-                  <TouchableOpacity activeOpacity={0.8}>
+                  <TouchableOpacity activeOpacity={0.8} onPress={() => onOpenDocuments(doc.id)}>
                     <ThemedText variant="body3" color="primary">
                       Open
                     </ThemedText>

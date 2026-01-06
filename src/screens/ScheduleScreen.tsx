@@ -48,6 +48,7 @@ export type Appointment = {
 export type ScheduleScreenProps = {
   onGoHome: () => void;
   onOpenService: () => void;
+  onOpenAppointments?: () => void;
   onOpenProfile?: () => void;
   onOpenChat?: () => void;
   appointments?: Appointment[];
