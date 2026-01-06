@@ -32,8 +32,18 @@ describe('Validation Schemas', () => {
   });
 
   describe('phoneSchema', () => {
-    it('should validate correct phone numbers', () => {
+    it('should validate local format phone numbers', () => {
       const result = phoneSchema.safeParse('0501234567');
+      expect(result.success).toBe(true);
+    });
+
+    it('should validate international format phone numbers', () => {
+      const result = phoneSchema.safeParse('+233501234567');
+      expect(result.success).toBe(true);
+    });
+
+    it('should validate international format without plus sign', () => {
+      const result = phoneSchema.safeParse('233501234567');
       expect(result.success).toBe(true);
     });
 
@@ -44,6 +54,11 @@ describe('Validation Schemas', () => {
 
     it('should reject empty phone', () => {
       const result = phoneSchema.safeParse('');
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject phone numbers with invalid characters', () => {
+      const result = phoneSchema.safeParse('050-123-4567');
       expect(result.success).toBe(false);
     });
   });

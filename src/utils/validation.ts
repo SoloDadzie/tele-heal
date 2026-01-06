@@ -9,12 +9,13 @@ const emailSchema = z.string().email('Invalid email address').min(1, 'Email is r
 
 /**
  * Phone number validation schema
+ * Accepts both local format (0501234567) and international format (+233501234567)
  */
 export const phoneSchema = z
   .string()
-  .regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format')
-  .min(10, 'Phone number must be at least 10 digits')
-  .max(15, 'Phone number must be at most 15 digits');
+  .min(9, 'Phone number must be at least 9 digits')
+  .max(15, 'Phone number must be at most 15 digits')
+  .regex(/^(\+?[1-9]\d{1,14}|0\d{8,14})$/, 'Invalid phone number format');
 
 /**
  * Password validation schema
