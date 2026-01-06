@@ -4,7 +4,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import i18n from './src/i18n/config';
+import { AuthProvider } from './src/contexts/AuthContext';
+import { setupPushNotifications, handleNotificationResponse } from './src/utils/pushNotifications';
 import OnboardingCarouselScreen from './src/screens/OnboardingCarouselScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
@@ -309,6 +312,28 @@ export default function App() {
     'Avenir-Heavy': require('./assets/fonts/Avenir-Heavy.ttf'),
     'Avenir-Medium': require('./assets/fonts/Avenir-Medium.ttf'),
   });
+
+  // Initialize push notifications on mount
+  React.useEffect(() => {
+    const initializePushNotifications = async () => {
+      try {
+        await setupPushNotifications();
+      } catch (error) {
+        console.error('Failed to setup push notifications:', error);
+      }
+    };
+
+    initializePushNotifications();
+  }, []);
+
+  // Handle notification responses
+  React.useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
+      handleNotificationResponse(response);
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   const [route, setRoute] = React.useState<Route>('onboarding');
   const [patientProfile, setPatientProfile] = React.useState<PatientProfile | null>(null);
@@ -1216,9 +1241,11 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      {screen}
-      <StatusBar style="dark" />
-    </SafeAreaProvider>
+    <AuthProvider>
+      <SafeAreaProvider>
+        {screen}
+        <StatusBar style="dark" />
+      </SafeAreaProvider>
+    </AuthProvider>
   );
 }
